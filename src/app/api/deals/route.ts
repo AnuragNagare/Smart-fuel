@@ -1,4 +1,4 @@
-import { geminiManager } from '@/lib/gemini-manager';
+import { groq } from '@/lib/groq-client';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
@@ -34,35 +34,21 @@ Return EXACTLY 8-10 best offers in this JSON format (no markdown):
   ]
 }`;
 
-        const data = await geminiManager.withRotation('gemini-1.5-flash', async (model) => {
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.3,
-                    topK: 40,
-                    topP: 0.95,
-                    maxOutputTokens: 2048,
-                },
-                tools: [
-                    {
-                        googleSearchRetrieval: {
-                            dynamicRetrievalConfig: {
-                                mode: "MODE_DYNAMIC",
-                                dynamicThreshold: 0.7,
-                            },
-                        },
-                    },
-                ] as any,
-            });
-
-            const text = result.response.text();
-            const cleanedText = text
-                .replace(/```json\n?/g, '')
-                .replace(/```\n?/g, '')
-                .trim();
-
-            return JSON.parse(cleanedText);
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model: 'llama-3.1-8b-instant',
+            temperature: 0.3,
+            max_tokens: 2048,
+            top_p: 0.95,
         });
+
+        const text = chatCompletion.choices[0]?.message?.content || '{}';
+        const cleanedText = text
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
+
+        const data = JSON.parse(cleanedText);
 
         return NextResponse.json(data);
     } catch (error: any) {

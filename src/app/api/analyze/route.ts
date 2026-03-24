@@ -1,4 +1,4 @@
-import { geminiManager } from '@/lib/gemini-manager';
+import { groq } from '@/lib/groq-client';
 import { NextRequest, NextResponse } from 'next/server';
 
 interface UserProfile {
@@ -129,30 +129,38 @@ Return ONLY valid JSON (no markdown):
 If the image doesn't contain recognizable food, return:
 {"error": "Unable to identify food items in this image"}`;
 
-        // Generate content using rotation
-        const nutritionData = await geminiManager.withRotation('gemini-1.5-flash', async (model) => {
-            const result = await model.generateContent([
-                prompt,
+        // Generate content using Groq Vision
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
                 {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mimeType,
-                    },
-                },
-            ]);
-
-            const text = result.response.text();
-
-            // Clean markdown if present
-            const cleanedText = text
-                .replace(/```json\n?/g, '')
-                .replace(/```\n?/g, '')
-                .trim();
-
-            return JSON.parse(cleanedText);
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: prompt },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: image // The data URL with base64
+                            }
+                        }
+                    ]
+                }
+            ],
+            model: 'llama-3.2-11b-vision-preview',
+            temperature: 0.2,
+            max_tokens: 2048,
         });
 
-        // Check for error response from Gemini
+        const text = chatCompletion.choices[0]?.message?.content || '{}';
+
+        // Clean markdown if present
+        const cleanedText = text
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
+
+        const nutritionData = JSON.parse(cleanedText);
+
+        // Check for error response from Groq
         if (nutritionData.error) {
             return NextResponse.json(
                 { error: nutritionData.error },

@@ -1,5 +1,4 @@
-import { Content } from '@google/generative-ai';
-import { geminiManager } from '@/lib/gemini-manager';
+import { groq } from '@/lib/groq-client';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
@@ -28,47 +27,42 @@ User Profile:
 ` : ''}
 `;
 
-        const contents: Content[] = [];
+        const messages: any[] = [];
 
-        // Add system context as first message
-        contents.push({
-            role: 'user',
-            parts: [{ text: contextPrompt }]
+        // Add system context
+        messages.push({
+            role: 'system',
+            content: contextPrompt
         });
 
-        contents.push({
-            role: 'model',
-            parts: [{ text: "Hello! I'm FuelBot, your AI nutrition coach. I'm here to help you with personalized meal plans, recipes, and nutrition advice. How can I assist you today?" }]
+        messages.push({
+            role: 'assistant',
+            content: "Hello! I'm FuelBot, your AI nutrition coach. I'm here to help you with personalized meal plans, recipes, and nutrition advice. How can I assist you today?"
         });
 
         // Add history
         chatHistory.forEach((msg: any) => {
-            contents.push({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.text }]
+            messages.push({
+                role: msg.role === 'user' ? 'user' : 'assistant',
+                content: msg.text
             });
         });
 
         // Add current message
-        contents.push({
+        messages.push({
             role: 'user',
-            parts: [{ text: userMessage }]
+            content: userMessage
         });
 
-        const textResponse = await geminiManager.withRotation('gemini-1.5-flash', async (model) => {
-            const result = await model.generateContent({
-                contents,
-                generationConfig: {
-                    temperature: 0.7,
-                    topK: 40,
-                    topP: 0.95,
-                    maxOutputTokens: 2048,
-                },
-            });
-            return result.response.text();
+        const chatCompletion = await groq.chat.completions.create({
+            messages,
+            model: 'llama-3.1-8b-instant',
+            temperature: 0.7,
+            max_tokens: 2048,
+            top_p: 0.95,
         });
 
-        return NextResponse.json({ text: textResponse });
+        return NextResponse.json({ text: chatCompletion.choices[0]?.message?.content || '' });
     } catch (error: any) {
         console.error('FuelBot chat error:', error);
         return NextResponse.json(
