@@ -1,4 +1,4 @@
-import { groq } from '@/lib/groq-client';
+import { groqManager } from '@/lib/groq-manager';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
@@ -34,12 +34,14 @@ Return EXACTLY 8-10 best offers in this JSON format (no markdown):
   ]
 }`;
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
-            model: 'llama-3.1-8b-instant',
-            temperature: 0.3,
-            max_tokens: 2048,
-            top_p: 0.95,
+        const chatCompletion = await groqManager.withRotation(async (groq) => {
+            return await groq.chat.completions.create({
+                messages: [{ role: 'user', content: prompt }],
+                model: 'llama-3.1-8b-instant',
+                temperature: 0.3,
+                max_tokens: 2048,
+                top_p: 0.95,
+            });
         });
 
         const text = chatCompletion.choices[0]?.message?.content || '{}';

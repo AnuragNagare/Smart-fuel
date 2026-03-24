@@ -1,4 +1,4 @@
-import { groq } from '@/lib/groq-client';
+import { groqManager } from '@/lib/groq-manager';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
@@ -54,12 +54,14 @@ User Profile:
             content: userMessage
         });
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages,
-            model: 'llama-3.1-8b-instant',
-            temperature: 0.7,
-            max_tokens: 2048,
-            top_p: 0.95,
+        const chatCompletion = await groqManager.withRotation(async (groq) => {
+            return await groq.chat.completions.create({
+                messages,
+                model: 'llama-3.1-8b-instant',
+                temperature: 0.7,
+                max_tokens: 2048,
+                top_p: 0.95,
+            });
         });
 
         return NextResponse.json({ text: chatCompletion.choices[0]?.message?.content || '' });

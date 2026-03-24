@@ -1,4 +1,4 @@
-import { groq } from '@/lib/groq-client';
+import { groqManager } from '@/lib/groq-manager';
 import { NextRequest, NextResponse } from 'next/server';
 
 interface UserProfile {
@@ -130,24 +130,26 @@ If the image doesn't contain recognizable food, return:
 {"error": "Unable to identify food items in this image"}`;
 
         // Generate content using Groq Vision
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: prompt },
-                        {
-                            type: 'image_url',
-                            image_url: {
-                                url: image // The data URL with base64
+        const chatCompletion = await groqManager.withRotation(async (groq) => {
+            return await groq.chat.completions.create({
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: image // The data URL with base64
+                                }
                             }
-                        }
-                    ]
-                }
-            ],
-            model: 'llama-3.2-11b-vision-preview',
-            temperature: 0.2,
-            max_tokens: 2048,
+                        ]
+                    }
+                ],
+                model: 'llama-3.2-11b-vision-preview',
+                temperature: 0.2,
+                max_tokens: 2048,
+            });
         });
 
         const text = chatCompletion.choices[0]?.message?.content || '{}';
