@@ -146,7 +146,7 @@ If the image doesn't contain recognizable food, return:
                         ]
                     }
                 ],
-                model: 'llama-3.2-11b-vision-preview',
+                model: 'meta-llama/llama-4-scout-17b-16e-instruct',
                 temperature: 0.2,
                 max_tokens: 2048,
             });
