@@ -5,9 +5,13 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
+import { chatWithFuelBot } from '../../services/fuelbot';
+import { getUserProfile, getBMI } from '../../services/storage';
 
 interface Meal {
     name: string;
@@ -28,6 +32,31 @@ interface DayPlan {
 export default function MealPlanningScreen() {
     const [weekPlan, setWeekPlan] = useState<DayPlan[]>(generateWeekPlan());
     const [selectedDay, setSelectedDay] = useState(0);
+    const [isReplacing, setIsReplacing] = useState<string | null>(null);
+    const [isLoadingRecipe, setIsLoadingRecipe] = useState<string | null>(null);
+    const [userContext, setUserContext] = useState<any>(null);
+
+    React.useEffect(() => {
+        loadUserData();
+    }, []);
+
+    const loadUserData = async () => {
+        try {
+            const profile = await getUserProfile();
+            const bmi = await getBMI();
+            if (profile) {
+                setUserContext({
+                    name: profile.name,
+                    age: profile.age,
+                    weight: profile.weight,
+                    height: profile.height,
+                    bmi: bmi || undefined,
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load user data:', error);
+        }
+    };
 
     function generateWeekPlan(): DayPlan[] {
         const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -65,7 +94,58 @@ export default function MealPlanningScreen() {
         });
     }
 
-    const renderMealCard = (mealType: string, meal: Meal, icon: string) => (
+    const handleViewRecipe = async (meal: Meal, mealType: string, dayName: string) => {
+        const mealKey = `${dayName}-${mealType}`;
+        setIsLoadingRecipe(mealKey);
+        try {
+            const response = await chatWithFuelBot(
+                `Give me a short, simple recipe and cooking instructions for ${meal.name}. Format nicely as plain text.`,
+                [],
+                userContext
+            );
+            Alert.alert(`Recipe: ${meal.name}`, response);
+        } catch (error) {
+            Alert.alert('Error', 'Failed to fetch the recipe. Please try again.');
+        } finally {
+            setIsLoadingRecipe(null);
+        }
+    };
+
+    const handleReplace = async (dayIndex: number, mealType: string, currentMeal: Meal, dayName: string) => {
+        const mealKey = `${dayName}-${mealType}`;
+        setIsReplacing(mealKey);
+        try {
+            const response = await chatWithFuelBot(
+                `Give me one single alternative meal for ${mealType} instead of ${currentMeal.name}. Reply EXACTLY and ONLY with a valid JSON object in this format: {"name": "Meal Name", "calories": 400, "protein": 30, "carbs": 40, "fat": 15}. Do not include markdown or any other text, just raw JSON.`,
+                [],
+                userContext
+            );
+            
+            const newMealData = JSON.parse(response.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
+            
+            setWeekPlan(prevPlan => {
+                const newPlan = [...prevPlan];
+                const dayToUpdate = { ...newPlan[dayIndex] };
+                if (mealType.toLowerCase() === 'breakfast') dayToUpdate.breakfast = newMealData;
+                else if (mealType.toLowerCase() === 'lunch') dayToUpdate.lunch = newMealData;
+                else if (mealType.toLowerCase() === 'dinner') dayToUpdate.dinner = newMealData;
+                newPlan[dayIndex] = dayToUpdate;
+                return newPlan;
+            });
+        } catch (error) {
+            console.error('Failed to replace meal:', error);
+            Alert.alert('Error', 'Failed to generate a new meal. Please try again.');
+        } finally {
+            setIsReplacing(null);
+        }
+    };
+
+    const renderMealCard = (mealType: string, meal: Meal, icon: string, dayIndex: number, dayName: string) => {
+        const mealKey = `${dayName}-${mealType}`;
+        const replacing = isReplacing === mealKey;
+        const loadingRecipe = isLoadingRecipe === mealKey;
+
+        return (
         <View style={styles.mealCard}>
             <View style={styles.mealHeader}>
                 <Text style={styles.mealIcon}>{icon}</Text>
@@ -92,15 +172,32 @@ export default function MealPlanningScreen() {
             </View>
 
             <View style={styles.mealActions}>
-                <TouchableOpacity style={styles.actionButton}>
-                    <Text style={styles.actionButtonText}>Replace</Text>
+                <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => handleReplace(dayIndex, mealType, meal, dayName)}
+                    disabled={replacing || loadingRecipe}
+                >
+                    {replacing ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                        <Text style={styles.actionButtonText}>Replace</Text>
+                    )}
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionButton, styles.actionButtonOutline]}>
-                    <Text style={styles.actionButtonTextOutline}>View Recipe</Text>
+                <TouchableOpacity 
+                    style={[styles.actionButton, styles.actionButtonOutline]}
+                    onPress={() => handleViewRecipe(meal, mealType, dayName)}
+                    disabled={replacing || loadingRecipe}
+                >
+                    {loadingRecipe ? (
+                        <ActivityIndicator color={LIGHT_COLORS.accentPrimary} size="small" />
+                    ) : (
+                        <Text style={styles.actionButtonTextOutline}>View Recipe</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </View>
-    );
+        );
+    };
 
     const currentDay = weekPlan[selectedDay];
     const totalCalories = currentDay.breakfast.calories + currentDay.lunch.calories + currentDay.dinner.calories;
@@ -167,9 +264,9 @@ export default function MealPlanningScreen() {
 
             {/* Meals List */}
             <ScrollView style={styles.mealsContainer} showsVerticalScrollIndicator={false}>
-                {renderMealCard('Breakfast', currentDay.breakfast, '🌅')}
-                {renderMealCard('Lunch', currentDay.lunch, '☀️')}
-                {renderMealCard('Dinner', currentDay.dinner, '🌙')}
+                {renderMealCard('Breakfast', currentDay.breakfast, '🌅', selectedDay, currentDay.day)}
+                {renderMealCard('Lunch', currentDay.lunch, '☀️', selectedDay, currentDay.day)}
+                {renderMealCard('Dinner', currentDay.dinner, '🌙', selectedDay, currentDay.day)}
 
                 {/* Action Buttons */}
                 <TouchableOpacity style={styles.generateButton}>
