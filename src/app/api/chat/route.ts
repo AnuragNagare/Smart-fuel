@@ -16,6 +16,7 @@ IMPORTANT GUIDELINES:
 5. Be specific and practical
 6. Focus on Indian/local cuisine when relevant
 7. Keep portions realistic and easy to prepare
+8. DO NOT use markdown formatting like asterisks (*) for bolding or lists. Use plain text only.
 
 ${profile ? `
 User Profile:
