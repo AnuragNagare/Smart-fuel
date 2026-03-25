@@ -5,32 +5,161 @@ import {
     StyleSheet,
     ScrollView,
     Dimensions,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LineChart, ProgressChart } from 'react-native-chart-kit';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
+import { getMealHistory, MealRecord } from '../../services/history';
+import { chatWithFuelBot } from '../../services/fuelbot';
+import { getUserProfile, getBMI } from '../../services/storage';
+import { getCurrentUser } from '../../services/auth';
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function HealthInsightsScreen() {
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [avgCalories, setAvgCalories] = React.useState(0);
+    const [targetCalories, setTargetCalories] = React.useState(2000);
+
     const [weightData] = useState({
         labels: ['Jan 1', 'Jan 8', 'Jan 15', 'Jan 22', 'Today'],
-        datasets: [{
-            data: [72, 71.5, 71, 70.8, 70.5],
-        }],
+        datasets: [{ data: [72, 71.5, 71, 70.8, 70.5] }],
     });
 
-    const [calorieData] = useState({
+    const [calorieData, setCalorieData] = useState({
         labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        datasets: [{
-            data: [1850, 2100, 1950, 2200, 1900, 2300, 1800],
-        }],
+        datasets: [{ data: [0, 0, 0, 0, 0, 0, 0] }],
     });
 
-    const [goalProgress] = useState({
-        labels: ['Protein', 'Calories', 'Workouts'],
-        data: [0.85, 0.92, 0.71],
+    const [goalProgress, setGoalProgress] = useState({
+        labels: ['Protein', 'Calories', 'Carbs'],
+        data: [0, 0, 0],
     });
+
+    const [insights, setInsights] = useState([
+        {
+            icon: '🍽️',
+            title: 'Analyzing Diet...',
+            text: 'We are analyzing your recent meals to generate personalized insights.',
+        }
+    ]);
+
+    React.useEffect(() => {
+        loadData();
+    }, []);
+
+    const loadData = async () => {
+        setIsLoading(true);
+        try {
+            const user = await getCurrentUser();
+            if (!user) {
+                setIsLoading(false);
+                return;
+            }
+
+            const profile = await getUserProfile();
+            const bmi = await getBMI();
+            const userContext = profile ? { ...profile, bmi: bmi || undefined } : undefined;
+            
+            // Set dynamic targets based on weight profile if exists
+            const currentWeight = profile?.weight ? Number(profile.weight) : 0;
+            const targetCals = currentWeight > 0 ? currentWeight * 24 * 1.2 : 2000;
+            const targetProtein = currentWeight > 0 ? currentWeight * 1.6 : 120; // 1.6g per kg
+            const targetCarbs = 200; // rough default for progress tracking
+            setTargetCalories(Math.round(targetCals));
+
+            // Fetch last 100 meals
+            const history = await getMealHistory(user.id, 100);
+
+            // Group by last 7 days including today
+            const last7Days = Array.from({length: 7}, (_, i) => {
+                const d = new Date();
+                d.setDate(d.getDate() - (6 - i));
+                return d;
+            });
+
+            const dayLabels = last7Days.map(d => d.toLocaleDateString('en-US', { weekday: 'short' }));
+            const dailyData = last7Days.map(() => ({ calories: 0, protein: 0, carbs: 0, fat: 0 }));
+
+            // Today's date at midnight for accurate diffing
+            const todayEnd = new Date();
+            todayEnd.setHours(23, 59, 59, 999);
+
+            history.forEach(meal => {
+                if (!meal.created_at) return;
+                const mealDate = new Date(meal.created_at);
+                const dayDiff = Math.floor((todayEnd.getTime() - mealDate.getTime()) / (1000 * 3600 * 24));
+                
+                if (dayDiff >= 0 && dayDiff < 7) {
+                    const idx = 6 - dayDiff;
+                    dailyData[idx].calories += meal.calories;
+                    dailyData[idx].protein += meal.protein;
+                    dailyData[idx].carbs += meal.carbs;
+                    dailyData[idx].fat += meal.fat;
+                }
+            });
+
+            setCalorieData({
+                labels: dayLabels,
+                datasets: [{ data: dailyData.map(d => Math.max(d.calories, 1)) }] // min 1 to avoid chart rendering crash on all 0s
+            });
+
+            // Calculate averages
+            let totalCals = 0, totalProtein = 0, totalCarbs = 0;
+            dailyData.forEach(d => {
+                totalCals += d.calories;
+                totalProtein += d.protein;
+                totalCarbs += d.carbs;
+            });
+            const avgCals = Math.round(totalCals / 7);
+            const avgProtein = Math.round(totalProtein / 7);
+            const avgCarbs = Math.round(totalCarbs / 7);
+            
+            setAvgCalories(avgCals);
+
+            // Update Progress Chart (capped at 1.0 = 100%)
+            setGoalProgress({
+                labels: ['Protein', 'Calories', 'Carbs'],
+                data: [
+                    Math.min(avgProtein / targetProtein, 1) || 0,
+                    Math.min(avgCals / targetCals, 1) || 0,
+                    Math.min(avgCarbs / targetCarbs, 1) || 0
+                ]
+            });
+
+            // Generate Insights via AI
+            if (totalCals > 0) { // Only generate insights if they actually logged meals
+                const dataContext = `Here is my average daily nutrition over the last 7 days:
+Calories: ${avgCals} (Target: ${Math.round(targetCals)})
+Protein: ${avgProtein}g (Target: ${Math.round(targetProtein)}g)
+Carbs: ${avgCarbs}g.`;
+
+                try {
+                    const aiResponse = await chatWithFuelBot(
+                        dataContext + ` Based on this explicit nutrient data, provide EXACTLY 3 short, highly personalized health/diet insights for me. Return EXACTLY a raw JSON array of objects with no markdown around it. Format: [{"icon": "emoji", "title": "Short Title", "text": "Short 1-sentence insight"}]. DO NOT wrap in \`\`\`json.`,
+                        [],
+                        userContext
+                    );
+
+                    const parsedInsights = JSON.parse(aiResponse.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
+                    if (Array.isArray(parsedInsights) && parsedInsights.length > 0) {
+                        setInsights(parsedInsights.slice(0, 3));
+                    }
+                } catch (e) {
+                    console.error("Failed to parse AI insights", e);
+                    setInsights([{ icon: '🤖', title: 'AI Error', text: 'Could not generate insights right now.' }]);
+                }
+            } else {
+                setInsights([{ icon: '📷', title: 'Log Meals', text: 'Log meals via the home screen using your camera to see your AI insights!' }]);
+            }
+
+        } catch (error) {
+            console.error('Data load error:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const chartConfig = {
         backgroundColor: LIGHT_COLORS.bgCard,
@@ -65,7 +194,16 @@ export default function HealthInsightsScreen() {
             </View>
 
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                {/* Prediction Card */}
+                {isLoading ? (
+                    <View style={{ marginTop: 40 }}>
+                        <ActivityIndicator size="large" color={LIGHT_COLORS.accentPrimary} />
+                        <Text style={{ textAlign: 'center', marginTop: 10, color: LIGHT_COLORS.textSecondary }}>
+                            Analyzing your recent meals...
+                        </Text>
+                    </View>
+                ) : (
+                    <>
+                        {/* Prediction Card */}
                 <View style={styles.predictionCard}>
                     <Text style={styles.predictionIcon}>🎯</Text>
                     <Text style={styles.predictionTitle}>Weight Prediction</Text>
@@ -107,7 +245,7 @@ export default function HealthInsightsScreen() {
                         style={styles.chart}
                     />
                     <Text style={styles.chartSubtitle}>
-                        Avg: 2,014 cal/day (Target: 2,000)
+                        Avg: {avgCalories} cal/day (Target: {targetCalories})
                     </Text>
                 </View>
 
@@ -127,31 +265,17 @@ export default function HealthInsightsScreen() {
                 </View>
 
                 {/* Insights Cards */}
-                <View style={styles.insightCard}>
-                    <Text style={styles.insightIcon}>💪</Text>
-                    <Text style={styles.insightTitle}>Protein Trend</Text>
-                    <Text style={styles.insightText}>
-                        Your protein intake is trending low. Average: 85g/day. Aim for 112g+ to maintain muscle during weight loss.
-                    </Text>
-                </View>
-
-                <View style={styles.insightCard}>
-                    <Text style={styles.insightIcon}>⚡</Text>
-                    <Text style={styles.insightTitle}>Energy Pattern</Text>
-                    <Text style={styles.insightText}>
-                        You tend to eat high-calorie meals after 8 PM. Try moving dinner to 7 PM for better sleep quality.
-                    </Text>
-                </View>
-
-                <View style={styles.insightCard}>
-                    <Text style={styles.insightIcon}>🥗</Text>
-                    <Text style={styles.insightTitle}>Nutrient Alert</Text>
-                    <Text style={styles.insightText}>
-                        Low Vitamin D intake detected (14 days). Add salmon, eggs, or fortified foods to your diet.
-                    </Text>
-                </View>
+                {insights.map((insight, index) => (
+                    <View key={index} style={styles.insightCard}>
+                        <Text style={styles.insightIcon}>{insight.icon}</Text>
+                        <Text style={styles.insightTitle}>{insight.title}</Text>
+                        <Text style={styles.insightText}>{insight.text}</Text>
+                    </View>
+                ))}
 
                 <View style={{ height: 20 }} />
+                    </>
+                )}
             </ScrollView>
         </LinearGradient>
     );
