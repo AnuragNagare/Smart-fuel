@@ -42,6 +42,7 @@ export default function SmartSwapsScreen() {
     const [swapsCache, setSwapsCache] = useState<Record<number, Swap>>({});
     const [isGenerating, setIsGenerating] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadingRecipeFor, setLoadingRecipeFor] = useState<string | null>(null);
     const [userContext, setUserContext] = useState<any>(null);
 
     useEffect(() => {
@@ -140,13 +141,18 @@ Return EXACTLY a raw JSON object (with NO markdown around it) with this exact st
         }
     };
 
-    const handleUseSwap = async () => {
-        if (!authUser) {
-            Alert.alert('Login Required', 'Please login to use swaps.');
-            return;
+    const handleUseSwap = async (meal: FoodItem) => {
+        setLoadingRecipeFor(meal.name);
+        try {
+            const prompt = `Give me a short, simple recipe and cooking instructions for ${meal.name}. It should take around ${meal.time} minutes and include budget-friendly ingredients if possible. Format nicely as plain text.`;
+            const response = await chatWithFuelBot(prompt, [], userContext);
+            Alert.alert(`Recipe: ${meal.name}`, response);
+        } catch (error) {
+            console.error('Failed to get recipe:', error);
+            Alert.alert('Error', 'Failed to fetch the recipe. Please try again.');
+        } finally {
+            setLoadingRecipeFor(null);
         }
-
-        Alert.alert('Success!', 'Swap saved to your meal plan!');
     };
 
 
@@ -204,8 +210,16 @@ Return EXACTLY a raw JSON object (with NO markdown around it) with this exact st
                 )}
 
                 {!isOriginal && (
-                    <TouchableOpacity style={styles.useSwapButton} onPress={handleUseSwap}>
-                        <Text style={styles.useSwapButtonText}>Use This Swap</Text>
+                    <TouchableOpacity 
+                        style={styles.useSwapButton} 
+                        onPress={() => handleUseSwap(meal)}
+                        disabled={loadingRecipeFor === meal.name}
+                    >
+                        {loadingRecipeFor === meal.name ? (
+                            <ActivityIndicator color="#ffffff" size="small" />
+                        ) : (
+                            <Text style={styles.useSwapButtonText}>Get Recipe</Text>
+                        )}
                     </TouchableOpacity>
                 )}
             </View>
