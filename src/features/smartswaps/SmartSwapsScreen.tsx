@@ -6,11 +6,15 @@ import {
     ScrollView,
     TouchableOpacity,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
 import { getCurrentUser, User } from '../../services/auth';
+import { getMealHistory } from '../../services/history';
+import { chatWithFuelBot } from '../../services/fuelbot';
+import { getUserProfile } from '../../services/storage';
 
 interface FoodItem {
     name: string;
@@ -32,95 +36,108 @@ interface Swap {
 export default function SmartSwapsScreen() {
     const [authUser, setAuthUser] = useState<User | null>(null);
     const insets = useSafeAreaInsets();
-    const [recentMeals] = useState<Swap[]>([
-        {
-            original: {
-                name: 'Chicken Alfredo Pasta',
-                calories: 850,
-                protein: 35,
-                carbs: 92,
-                fat: 38,
-                cost: 12,
-                time: 30,
-            },
-            healthier: {
-                name: 'Zucchini Alfredo',
-                calories: 420,
-                protein: 32,
-                carbs: 28,
-                fat: 18,
-                cost: 10,
-                time: 25,
-            },
-            cheaper: {
-                name: 'Chickpea Alfredo',
-                calories: 520,
-                protein: 28,
-                carbs: 65,
-                fat: 15,
-                cost: 6,
-                time: 20,
-            },
-            faster: {
-                name: 'Grilled Chicken Salad',
-                calories: 380,
-                protein: 40,
-                carbs: 25,
-                fat: 12,
-                cost: 9,
-                time: 10,
-            },
-        },
-        {
-            original: {
-                name: 'Beef Burger & Fries',
-                calories: 920,
-                protein: 42,
-                carbs: 85,
-                fat: 48,
-                cost: 15,
-                time: 20,
-            },
-            healthier: {
-                name: 'Turkey Burger Bowl',
-                calories: 480,
-                protein: 45,
-                carbs: 38,
-                fat: 16,
-                cost: 12,
-                time: 18,
-            },
-            cheaper: {
-                name: 'Bean Burger',
-                calories: 520,
-                protein: 22,
-                carbs: 68,
-                fat: 18,
-                cost: 7,
-                time: 15,
-            },
-            faster: {
-                name: 'Grilled Chicken Wrap',
-                calories: 420,
-                protein: 38,
-                carbs: 42,
-                fat: 12,
-                cost: 10,
-                time: 8,
-            },
-        },
-    ]);
-
-    const [selectedMeal, setSelectedMeal] = useState(0);
-    const currentSwap = recentMeals[selectedMeal];
+    
+    const [historyMeals, setHistoryMeals] = useState<FoodItem[]>([]);
+    const [selectedMealIndex, setSelectedMealIndex] = useState(0);
+    const [swapsCache, setSwapsCache] = useState<Record<number, Swap>>({});
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [userContext, setUserContext] = useState<any>(null);
 
     useEffect(() => {
         loadUserData();
     }, []);
 
     const loadUserData = async () => {
-        const currentUser = await getCurrentUser();
-        setAuthUser(currentUser);
+        setIsLoading(true);
+        try {
+            const currentUser = await getCurrentUser();
+            setAuthUser(currentUser);
+
+            const profile = await getUserProfile();
+            if (profile) setUserContext(profile);
+
+            if (currentUser) {
+                const history = await getMealHistory(currentUser.id, 30);
+                if (history && history.length > 0) {
+                    const mappedMeals: FoodItem[] = history.map(h => ({
+                        name: h.meal_name,
+                        calories: h.calories || 0,
+                        protein: h.protein || 0,
+                        carbs: h.carbs || 0,
+                        fat: h.fat || 0,
+                        cost: 15, // estimated baseline
+                        time: 30, // estimated baseline
+                    }));
+                    
+                    // Remove duplicates by name to show unique recent foods
+                    const uniqueMeals = mappedMeals.filter((meal, index, self) =>
+                        index === self.findIndex((t) => t.name === meal.name)
+                    );
+
+                    setHistoryMeals(uniqueMeals);
+                    if (uniqueMeals.length > 0) {
+                        generateSwaps(0, uniqueMeals[0]);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const generateSwaps = async (index: number, mealToSwap: FoodItem) => {
+        setSelectedMealIndex(index);
+        
+        if (swapsCache[index]) {
+            return; // Already generated
+        }
+
+        setIsGenerating(true);
+        
+        try {
+            const prompt = `Generate exactly 3 alternative meal swaps for "${mealToSwap.name}" which currently has ${mealToSwap.calories} cal, ${mealToSwap.protein}g protein.
+1. 'healthier': lower calorie, higher protein
+2. 'cheaper': very budget-friendly ingredients
+3. 'faster': cooks in under 10 minutes
+
+Return EXACTLY a raw JSON object (with NO markdown around it) with this exact structure:
+{
+  "healthier": { "name": "...", "calories": 400, "protein": 30, "carbs": 20, "fat": 10, "cost": 8, "time": 15 },
+  "cheaper": { "name": "...", "calories": 500, "protein": 25, "carbs": 40, "fat": 12, "cost": 4, "time": 20 },
+  "faster": { "name": "...", "calories": 450, "protein": 28, "carbs": 30, "fat": 15, "cost": 9, "time": 8 }
+}`;
+            const response = await chatWithFuelBot(prompt, [], userContext);
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            const jsonString = jsonMatch ? jsonMatch[0] : response.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+            const alternatives = JSON.parse(jsonString);
+
+            const newSwapEntry: Swap = {
+                original: mealToSwap,
+                healthier: alternatives.healthier,
+                cheaper: alternatives.cheaper,
+                faster: alternatives.faster,
+            };
+
+            setSwapsCache(prev => ({ ...prev, [index]: newSwapEntry }));
+
+        } catch (error) {
+            console.error('Failed to generate swaps:', error);
+            // Fallback object to prevent crashing page if parse fails
+            setSwapsCache(prev => ({ 
+                ...prev, 
+                [index]: {
+                    original: mealToSwap,
+                    healthier: { name: 'AI Error (Try again)', calories: 0, protein: 0, carbs: 0, fat: 0, cost: 0, time: 0 },
+                    cheaper: { name: 'AI Error', calories: 0, protein: 0, carbs: 0, fat: 0, cost: 0, time: 0 },
+                    faster: { name: 'AI Error', calories: 0, protein: 0, carbs: 0, fat: 0, cost: 0, time: 0 },
+                } 
+            }));
+        } finally {
+            setIsGenerating(false);
+        }
     };
 
     const handleUseSwap = async () => {
@@ -133,19 +150,22 @@ export default function SmartSwapsScreen() {
     };
 
 
-    const renderMealCard = (meal: FoodItem, label: string, icon: string, comparisonType?: 'healthier' | 'cheaper' | 'faster') => {
+    const renderMealCard = (meal: FoodItem | undefined, label: string, icon: string, comparisonType?: 'healthier' | 'cheaper' | 'faster') => {
         const isOriginal = !comparisonType;
+        if (!meal) return null;
+        
+        const currentSwap = swapsCache[selectedMealIndex];
 
         let comparison = null;
-        if (comparisonType === 'healthier') {
+        if (currentSwap && comparisonType === 'healthier') {
             const calDiff = currentSwap.original.calories - meal.calories;
-            comparison = `Save ${calDiff} cal`;
-        } else if (comparisonType === 'cheaper') {
+            comparison = calDiff > 0 ? `Save ${calDiff} cal` : `${Math.abs(calDiff)} cal higher`;
+        } else if (currentSwap && comparisonType === 'cheaper') {
             const costDiff = currentSwap.original.cost - meal.cost;
-            comparison = `Save $${costDiff}`;
-        } else if (comparisonType === 'faster') {
+            comparison = costDiff > 0 ? `Save $${costDiff}` : `$${Math.abs(costDiff)} more`;
+        } else if (currentSwap && comparisonType === 'faster') {
             const timeDiff = currentSwap.original.time - meal.time;
-            comparison = `${timeDiff} min faster`;
+            comparison = timeDiff > 0 ? `${timeDiff} min faster` : `${Math.abs(timeDiff)} min slower`;
         }
 
         return (
@@ -211,42 +231,68 @@ export default function SmartSwapsScreen() {
             {/* Usage Meter removed for free release */}
 
             {/* Meal Selector */}
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.mealSelector}
-                contentContainerStyle={styles.mealSelectorContent}
-            >
-                {recentMeals.map((swap, index) => (
-                    <TouchableOpacity
-                        key={index}
-                        style={[
-                            styles.mealChip,
-                            selectedMeal === index && styles.mealChipActive,
-                        ]}
-                        onPress={() => setSelectedMeal(index)}
-                    >
-                        <Text style={[
-                            styles.mealChipText,
-                            selectedMeal === index && styles.mealChipTextActive,
-                        ]}>
-                            {swap.original.name}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </ScrollView>
+            {historyMeals.length === 0 && !isLoading ? (
+                <View style={{ padding: LIGHT_SPACING.xl, alignItems: 'center', marginTop: 40 }}>
+                    <Text style={{ fontSize: 48, marginBottom: 10 }}>📷</Text>
+                    <Text style={{ fontSize: 18, color: LIGHT_COLORS.textPrimary, textAlign: 'center', fontWeight: '600' }}>
+                        No Meals Found
+                    </Text>
+                    <Text style={{ fontSize: 14, color: LIGHT_COLORS.textSecondary, textAlign: 'center', marginTop: 8 }}>
+                        Go to the Home tab and use the camera to log your first meal. Your Smart Swaps will appear here!
+                    </Text>
+                </View>
+            ) : (
+                <>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.mealSelector}
+                    contentContainerStyle={styles.mealSelectorContent}
+                >
+                    {historyMeals.map((meal, index) => (
+                        <TouchableOpacity
+                            key={index}
+                            style={[
+                                styles.mealChip,
+                                selectedMealIndex === index && styles.mealChipActive,
+                            ]}
+                            onPress={() => generateSwaps(index, meal)}
+                            disabled={isGenerating}
+                        >
+                            <Text style={[
+                                styles.mealChipText,
+                                selectedMealIndex === index && styles.mealChipTextActive,
+                            ]}>
+                                {meal.name}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
 
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                {renderMealCard(currentSwap.original, 'Your Original Meal', '🍽️')}
+                {isLoading || isGenerating ? (
+                    <View style={{ marginTop: 60, alignItems: 'center' }}>
+                        <ActivityIndicator size="large" color={LIGHT_COLORS.accentPrimary} />
+                        <Text style={{ marginTop: 16, color: LIGHT_COLORS.textSecondary }}>
+                            {isGenerating ? "FuelBot is analyzing alternatives..." : "Loading meal history..."}
+                        </Text>
+                    </View>
+                ) : swapsCache[selectedMealIndex] ? (
+                    <>
+                        {renderMealCard(swapsCache[selectedMealIndex].original, 'Your Original Meal', '🍽️')}
 
-                <Text style={styles.sectionTitle}>Smart Alternatives</Text>
+                        <Text style={styles.sectionTitle}>Smart Alternatives</Text>
 
-                {renderMealCard(currentSwap.healthier, 'Healthier Option', '🥗', 'healthier')}
-                {renderMealCard(currentSwap.cheaper, 'Budget-Friendly', '💰', 'cheaper')}
-                {renderMealCard(currentSwap.faster, 'Quick Option', '⚡', 'faster')}
+                        {renderMealCard(swapsCache[selectedMealIndex].healthier, 'Healthier Option', '🥗', 'healthier')}
+                        {renderMealCard(swapsCache[selectedMealIndex].cheaper, 'Budget-Friendly', '💰', 'cheaper')}
+                        {renderMealCard(swapsCache[selectedMealIndex].faster, 'Quick Option', '⚡', 'faster')}
 
-                <View style={{ height: insets.bottom + 20 }} />
+                        <View style={{ height: insets.bottom + 20 }} />
+                    </>
+                ) : null}
             </ScrollView>
+            </>
+            )}
         </LinearGradient>
     );
 }
