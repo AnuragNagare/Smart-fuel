@@ -137,12 +137,16 @@ Carbs: ${avgCarbs}g.`;
 
                 try {
                     const aiResponse = await chatWithFuelBot(
-                        dataContext + ` Based on this explicit nutrient data, provide EXACTLY 3 short, highly personalized health/diet insights for me. Return EXACTLY a raw JSON array of objects with no markdown around it. Format: [{"icon": "emoji", "title": "Short Title", "text": "Short 1-sentence insight"}]. DO NOT wrap in \`\`\`json.`,
+                        dataContext + ` Based on this explicit nutrient data, provide EXACTLY 3 short, highly personalized health/diet insights for me. Return a JSON array of objects. Format: [{"icon": "emoji", "title": "Short Title", "text": "Short 1-sentence insight"}].`,
                         [],
                         userContext
                     );
 
-                    const parsedInsights = JSON.parse(aiResponse.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
+                    // Safely extract the JSON array using regex in case the AI added conversational text around it
+                    const jsonMatch = aiResponse.match(/\[\s*\{[\s\S]*\}\s*\]/);
+                    const jsonString = jsonMatch ? jsonMatch[0] : aiResponse.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+
+                    const parsedInsights = JSON.parse(jsonString);
                     if (Array.isArray(parsedInsights) && parsedInsights.length > 0) {
                         setInsights(parsedInsights.slice(0, 3));
                     }
