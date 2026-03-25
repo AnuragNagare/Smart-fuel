@@ -34,6 +34,8 @@ export default function MealPlanningScreen() {
     const [selectedDay, setSelectedDay] = useState(0);
     const [isReplacing, setIsReplacing] = useState<string | null>(null);
     const [isLoadingRecipe, setIsLoadingRecipe] = useState<string | null>(null);
+    const [isRegeneratingAll, setIsRegeneratingAll] = useState(false);
+    const [isGeneratingList, setIsGeneratingList] = useState(false);
     const [userContext, setUserContext] = useState<any>(null);
 
     React.useEffect(() => {
@@ -137,6 +139,58 @@ export default function MealPlanningScreen() {
             Alert.alert('Error', 'Failed to generate a new meal. Please try again.');
         } finally {
             setIsReplacing(null);
+        }
+    };
+
+    const handleRegenerateAll = async () => {
+        setIsRegeneratingAll(true);
+        try {
+            const response = await chatWithFuelBot(
+                `Generate a full healthy day of eating with exactly 1 Breakfast, 1 Lunch, and 1 Dinner. Reply EXACTLY and ONLY with a valid JSON array of 3 objects in this exact format: [{"name": "Meal Name", "calories": 400, "protein": 30, "carbs": 40, "fat": 15}]. The first object must be breakfast, second lunch, third dinner. DO NOT include any conversational text.`,
+                [],
+                userContext
+            );
+            
+            // Extract JSON array robustly
+            const jsonMatch = response.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            const jsonString = jsonMatch ? jsonMatch[0] : response.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+            const newMeals = JSON.parse(jsonString);
+
+            if (Array.isArray(newMeals) && newMeals.length >= 3) {
+                setWeekPlan(prevPlan => {
+                    const newPlan = [...prevPlan];
+                    const dayToUpdate = { ...newPlan[selectedDay] };
+                    dayToUpdate.breakfast = newMeals[0];
+                    dayToUpdate.lunch = newMeals[1];
+                    dayToUpdate.dinner = newMeals[2];
+                    newPlan[selectedDay] = dayToUpdate;
+                    return newPlan;
+                });
+            } else {
+                throw new Error("Invalid meals array returned");
+            }
+        } catch (error) {
+            console.error('Failed to regenerate all meals:', error);
+            Alert.alert('Error', 'Failed to generate new meals. Please try again.');
+        } finally {
+            setIsRegeneratingAll(false);
+        }
+    };
+
+    const handleGenerateGroceryList = async () => {
+        setIsGeneratingList(true);
+        const currentMeals = weekPlan[selectedDay];
+        try {
+             const response = await chatWithFuelBot(
+                `Here are my meals for today:\nBreakfast: ${currentMeals.breakfast.name}\nLunch: ${currentMeals.lunch.name}\nDinner: ${currentMeals.dinner.name}\n\nGenerate a clear, bulleted grocery list categorized by produce, meats, pantry, etc., needed to cook these 3 meals. Keep it concise.`,
+                [],
+                userContext
+            );
+            Alert.alert(`🛒 Grocery List (${currentMeals.day})`, response);
+        } catch (error) {
+            Alert.alert('Error', 'Failed to generate grocery list. Please try again.');
+        } finally {
+            setIsGeneratingList(false);
         }
     };
 
@@ -269,12 +323,28 @@ export default function MealPlanningScreen() {
                 {renderMealCard('Dinner', currentDay.dinner, '🌙', selectedDay, currentDay.day)}
 
                 {/* Action Buttons */}
-                <TouchableOpacity style={styles.generateButton}>
-                    <Text style={styles.generateButtonText}>✨ Regenerate All Meals</Text>
+                <TouchableOpacity 
+                    style={styles.generateButton}
+                    onPress={handleRegenerateAll}
+                    disabled={isRegeneratingAll || isGeneratingList}
+                >
+                    {isRegeneratingAll ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                        <Text style={styles.generateButtonText}>✨ Regenerate All Meals</Text>
+                    )}
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.generateButton, styles.groceryButton]}>
-                    <Text style={styles.groceryButtonText}>🛒 Generate Grocery List</Text>
+                <TouchableOpacity 
+                    style={[styles.generateButton, styles.groceryButton]}
+                    onPress={handleGenerateGroceryList}
+                    disabled={isGeneratingList || isRegeneratingAll}
+                >
+                    {isGeneratingList ? (
+                        <ActivityIndicator color={LIGHT_COLORS.accentPrimary} size="small" />
+                    ) : (
+                        <Text style={styles.groceryButtonText}>🛒 Generate Grocery List</Text>
+                    )}
                 </TouchableOpacity>
 
                 <View style={{ height: 20 }} />
