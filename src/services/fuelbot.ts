@@ -41,7 +41,8 @@ export async function chatWithFuelBot(
             throw new Error('Invalid response from chat service');
         }
 
-        return data.text;
+        // Strip out markdown bold/italic asterisks for cleaner mobile rendering
+        return data.text.replace(/\*/g, '');
     } catch (error) {
         console.error('FuelBot chat error:', error);
         throw new Error('Failed to get response from FuelBot. Please try again.');
