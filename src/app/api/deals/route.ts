@@ -37,10 +37,11 @@ Return EXACTLY 8-10 best offers in this JSON format (no markdown):
         const chatCompletion = await groqManager.withRotation(async (groq) => {
             return await groq.chat.completions.create({
                 messages: [{ role: 'user', content: prompt }],
-                model: 'llama-3.1-8b-instant',
+                model: 'llama-3.3-70b-versatile',
                 temperature: 0.3,
                 max_tokens: 2048,
                 top_p: 0.95,
+                response_format: { type: 'json_object' },
             });
         });
 
