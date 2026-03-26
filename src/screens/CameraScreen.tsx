@@ -93,27 +93,28 @@ export default function CameraScreen({ navigation }: Props) {
 
     return (
         <View style={styles.container}>
-            <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
-                <View style={styles.header}>
-                    <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
-                        <Text style={styles.closeText}>✕</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Take a photo</Text>
-                    <View style={{ width: 40 }} />
-                </View>
+            <CameraView ref={cameraRef} style={styles.camera} facing={facing} />
+            
+            <View style={styles.header}>
+                <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+                    <Text style={styles.closeText}>✕</Text>
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Take a photo</Text>
+                <View style={{ width: 40 }} />
+            </View>
 
-                <View style={styles.controls}>
-                    <TouchableOpacity style={styles.flipButton} onPress={toggleCameraFacing}>
-                        <Text style={styles.flipText}>🔄</Text>
-                    </TouchableOpacity>
+            <View style={styles.controls}>
+                <TouchableOpacity style={styles.flipButton} onPress={toggleCameraFacing}>
+                    <Text style={styles.flipText}>🔄</Text>
+                </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.captureButton} onPress={handleCapture}>
-                        <View style={styles.captureButtonInner} />
-                    </TouchableOpacity>
+                <TouchableOpacity style={styles.captureButton} onPress={handleCapture}>
+                    <View style={styles.captureButtonInner} />
+                </TouchableOpacity>
 
-                    <View style={{ width: 60 }} />
-                </View>
-            </CameraView>
+                <View style={{ width: 60 }} />
+            </View>
+            
             {isAnalyzing && <LoadingScreen />}
         </View>
     );
@@ -151,6 +152,11 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     header: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 10,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -182,6 +188,7 @@ const styles = StyleSheet.create({
         bottom: 60, // Increased for system navigation
         left: 0,
         right: 0,
+        zIndex: 10,
         flexDirection: 'row',
         justifyContent: 'space-around',
         alignItems: 'center',
