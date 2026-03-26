@@ -11,7 +11,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
 import { getTodaysDeals, DealOffer } from '../../services/deals';
-import { getUserProfile } from '../../services/storage';
+import { getUserProfile, getBMI } from '../../services/storage';
+import { getCurrentUser } from '../../services/auth';
+import { getMealHistory } from '../../services/history';
+import { chatWithFuelBot } from '../../services/fuelbot';
 
 interface CheatMeal {
     name: string;
@@ -28,8 +31,17 @@ export default function CheatMealScreen() {
     const [userLocation, setUserLocation] = useState('Mumbai');
     const insets = useSafeAreaInsets();
 
+    const [cheatBudget, setCheatBudget] = useState({ used: 0, total: 2, caloriesUnder: 0 });
+    const [bestDay, setBestDay] = useState({ day: 'Analyzing...', reason: 'Loading your meal history...' });
+    const [isAnalyzingHistory, setIsAnalyzingHistory] = useState(true);
+    
+    const [optimizerData, setOptimizerData] = useState<any>(null);
+    const [isOptimizing, setIsOptimizing] = useState(false);
+    const [userContext, setUserContext] = useState<any>(null);
+
     useEffect(() => {
         loadUserLocation();
+        analyzeHistory();
     }, []);
 
     const loadUserLocation = async () => {
@@ -40,6 +52,58 @@ export default function CheatMealScreen() {
             }
         } catch (error) {
             console.error('Failed to load location:', error);
+        }
+    };
+
+    const analyzeHistory = async () => {
+        setIsAnalyzingHistory(true);
+        try {
+            const currentUser = await getCurrentUser();
+            const profile = await getUserProfile();
+            const bmi = await getBMI();
+            
+            if (profile) {
+                setUserContext({ ...profile, bmi });
+            }
+
+            if (currentUser && profile) {
+                const history = await getMealHistory(currentUser.id, 21); // get ~week of meals
+                
+                const today = new Date();
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(today.getDate() - 7);
+                
+                const lastWeekMeals = history.filter(h => h.created_at && new Date(h.created_at) >= sevenDaysAgo);
+                const totalCalories = lastWeekMeals.reduce((sum, meal) => sum + (meal.calories || 0), 0);
+                
+                const weight = Number(profile.weight) || 70;
+                const tdee = Math.round(weight * 24 * 1.2);
+                const weeklyDeficit = (tdee * 7) - totalCalories;
+                
+                const earnedTotal = weeklyDeficit > 2000 ? 2 : (weeklyDeficit > 0 ? 1 : 0);
+                
+                setCheatBudget({
+                    used: 0,
+                    total: earnedTotal,
+                    caloriesUnder: weeklyDeficit > 0 ? weeklyDeficit : 0
+                });
+
+                if (weeklyDeficit > 0) {
+                    const prompt = `Based on a mathematical weekly caloric deficit of ${weeklyDeficit} calories for a user trying to stay fit, what is the best day of the week to take a cheat meal and why? Return purely a raw JSON object (no markdown): {"day": "Friday", "reason": "Because..."}`;
+                    const res = await chatWithFuelBot(prompt, [], { ...profile, bmi } as any);
+                    const jsonMatch = res.match(/\{[\s\S]*\}/);
+                    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : res.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
+                    setBestDay({ day: parsed.day || 'Friday', reason: parsed.reason || `You earned it with a ${weeklyDeficit} cal deficit.` });
+                } else {
+                    setBestDay({ day: 'Not Yet', reason: 'You are currently in a caloric surplus this week.' });
+                }
+            }
+        } catch (error) {
+            console.error('Failed to analyze history:', error);
+            setCheatBudget({ used: 0, total: 1, caloriesUnder: 500 });
+            setBestDay({ day: 'Saturday', reason: 'Weekend recovery day.' });
+        } finally {
+            setIsAnalyzingHistory(false);
         }
     };
 
@@ -55,14 +119,53 @@ export default function CheatMealScreen() {
         }
     };
 
-    // Mock data
-    const cheatBudget = { used: 1, total: 2, caloriesUnder: 650 };
-    const bestDay = { day: 'Friday', reason: "You're 650 cal under this week" };
+    const handleCravingSelect = async (craving: string) => {
+        setCravingMeal(craving);
+        setShowOptimizer(true);
+        setIsOptimizing(true);
+        
+        try {
+            const prompt = `The user is craving ${craving}. Estimate the macros for a massive restaurant portion of this. Then, generate a strict 3-day recovery plan to offset these excess calories safely. Return EXACTLY a raw JSON object (no markdown):
+{
+  "impact": { "calories": 1200, "protein": 40, "fat": 60 },
+  "recoverySteps": [
+    { "day": "Day 1", "text": "..." },
+    { "day": "Day 2", "text": "..." },
+    { "day": "Day 3", "text": "..." }
+  ]
+}`;
+            const res = await chatWithFuelBot(prompt, [], userContext);
+            const jsonMatch = res.match(/\{[\s\S]*\}/);
+            const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : res.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
+            
+            setOptimizerData(parsed);
+        } catch (error) {
+            console.error('Failed to optimize craving:', error);
+            setOptimizerData({
+                impact: { calories: 1500, protein: 50, fat: 80 },
+                recoverySteps: [
+                    { day: "Day 1", text: "Reduce by 300 calories" },
+                    { day: "Day 2", text: "Reduce by 300 calories" },
+                    { day: "Day 3", text: "45 min intense cardio" }
+                ]
+            });
+        } finally {
+            setIsOptimizing(false);
+        }
+    };
+
     const cravings = ['🍕 Pizza', '🍔 Burger', '🍰 Cake', '🍦 Ice Cream', '🌮 Tacos', '🍜 Ramen'];
 
     const renderScheduler = () => (
         <View>
-            {/* Cheat Budget */}
+            {isAnalyzingHistory ? (
+                <View style={{ padding: 40, alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#ff9500" />
+                    <Text style={{ marginTop: 10, color: LIGHT_COLORS.textSecondary }}>Analyzing your meal history...</Text>
+                </View>
+            ) : (
+                <>
+                {/* Cheat Budget */}
             <View style={styles.budgetCard}>
                 <Text style={styles.budgetTitle}>Cheat Budget This Week</Text>
                 <View style={styles.progressContainer}>
@@ -111,6 +214,8 @@ export default function CheatMealScreen() {
                     ))}
                 </View>
             </View>
+            </>
+            )}
         </View>
     );
 
@@ -126,10 +231,7 @@ export default function CheatMealScreen() {
                                 styles.cravingChip,
                                 cravingMeal === craving && styles.cravingChipActive,
                             ]}
-                            onPress={() => {
-                                setCravingMeal(craving);
-                                setShowOptimizer(true);
-                            }}
+                            onPress={() => handleCravingSelect(craving)}
                         >
                             <Text style={styles.cravingText}>{craving}</Text>
                         </TouchableOpacity>
@@ -139,63 +241,60 @@ export default function CheatMealScreen() {
 
             {showOptimizer && cravingMeal && (
                 <>
-                    {/* Impact Analysis */}
-                    <View style={styles.impactCard}>
-                        <Text style={styles.impactTitle}>{cravingMeal}</Text>
-                        <View style={styles.impactStats}>
-                            <View style={styles.impactStat}>
-                                <Text style={styles.impactValue}>+1200</Text>
-                                <Text style={styles.impactLabel}>calories</Text>
-                            </View>
-                            <View style={styles.impactStat}>
-                                <Text style={styles.impactValue}>42g</Text>
-                                <Text style={styles.impactLabel}>protein</Text>
-                            </View>
-                            <View style={styles.impactStat}>
-                                <Text style={styles.impactValue}>65g</Text>
-                                <Text style={styles.impactLabel}>fat</Text>
-                            </View>
+                    {isOptimizing || !optimizerData ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color="#ff9500" />
+                            <Text style={{ marginTop: 10, color: LIGHT_COLORS.textSecondary }}>FuelBot is calculating impact...</Text>
                         </View>
-                    </View>
-
-                    {/* Recovery Plan */}
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Recovery Plan</Text>
-                        <Text style={styles.recoverySubtitle}>
-                            Balance this meal over the next 3 days
-                        </Text>
-
-                        <View style={styles.recoverySteps}>
-                            <View style={styles.recoveryStep}>
-                                <View style={styles.stepBadge}>
-                                    <Text style={styles.stepBadgeText}>Wed</Text>
+                    ) : (
+                        <>
+                        {/* Impact Analysis */}
+                        <View style={styles.impactCard}>
+                            <Text style={styles.impactTitle}>{cravingMeal}</Text>
+                            <View style={styles.impactStats}>
+                                <View style={styles.impactStat}>
+                                    <Text style={styles.impactValue}>+{optimizerData.impact.calories}</Text>
+                                    <Text style={styles.impactLabel}>calories</Text>
                                 </View>
-                                <Text style={styles.stepText}>Reduce by 200 calories</Text>
-                            </View>
-
-                            <View style={styles.recoveryStep}>
-                                <View style={styles.stepBadge}>
-                                    <Text style={styles.stepBadgeText}>Thu</Text>
+                                <View style={styles.impactStat}>
+                                    <Text style={styles.impactValue}>{optimizerData.impact.protein}g</Text>
+                                    <Text style={styles.impactLabel}>protein</Text>
                                 </View>
-                                <Text style={styles.stepText}>Reduce by 200 calories</Text>
-                            </View>
-
-                            <View style={styles.recoveryStep}>
-                                <View style={styles.stepBadge}>
-                                    <Text style={styles.stepBadgeText}>Fri</Text>
+                                <View style={styles.impactStat}>
+                                    <Text style={styles.impactValue}>{optimizerData.impact.fat}g</Text>
+                                    <Text style={styles.impactLabel}>fat</Text>
                                 </View>
-                                <Text style={styles.stepText}>30 min cardio workout</Text>
                             </View>
                         </View>
 
-                        <TouchableOpacity style={styles.worthItButton}>
-                            <Text style={styles.worthItButtonText}>Worth It! Let's Do This 🎉</Text>
-                        </TouchableOpacity>
+                        {/* Recovery Plan */}
+                        <View style={styles.card}>
+                            <Text style={styles.cardTitle}>Recovery Plan</Text>
+                            <Text style={styles.recoverySubtitle}>
+                                Balance this meal over the next 3 days
+                            </Text>
 
-                        <TouchableOpacity style={styles.alternativeButton}>
-                            <Text style={styles.alternativeButtonText}>Find Healthier Alternative</Text>
-                        </TouchableOpacity>
-                    </View>
+                            <View style={styles.recoverySteps}>
+                                {optimizerData.recoverySteps.map((step: any, idx: number) => (
+                                    <View key={idx} style={styles.recoveryStep}>
+                                        <View style={styles.stepBadge}>
+                                            <Text style={styles.stepBadgeText}>{step.day}</Text>
+                                        </View>
+                                        <Text style={styles.stepText}>{step.text}</Text>
+                                    </View>
+                                ))}
+                            </View>
+
+                            <TouchableOpacity style={styles.worthItButton}>
+                                <Text style={styles.worthItButtonText}>Worth It! Let's Do This 🎉</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.alternativeButton}>
+                                <Text style={styles.alternativeButtonText}>Find Healthier Alternative</Text>
+                            </TouchableOpacity>
+                        </View>
+                        </>
+                    )}
                 </>
             )}
         </View>
