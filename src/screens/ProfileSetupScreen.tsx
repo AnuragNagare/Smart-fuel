@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -13,7 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, UserProfile } from '../types';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../constants/lightTheme';
-import { saveUserProfile } from '../services/storage';
+import { saveUserProfile, getUserProfile } from '../services/storage';
+import { logout } from '../services/auth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -31,7 +32,19 @@ export default function ProfileSetupScreen({ navigation }: Props) {
         height: '',
         weight: '',
     });
+    const [hasExistingProfile, setHasExistingProfile] = useState(false);
     const insets = useSafeAreaInsets();
+
+    useEffect(() => {
+        const loadProfile = async () => {
+            const profile = await getUserProfile();
+            if (profile) {
+                setHasExistingProfile(true);
+                setFormData(profile);
+            }
+        };
+        loadProfile();
+    }, []);
 
     const updateField = (field: keyof UserProfile, value: string) => {
         setFormData((prev) => ({ ...prev, [field]: value }));
@@ -49,7 +62,11 @@ export default function ProfileSetupScreen({ navigation }: Props) {
     const handleSubmit = async () => {
         try {
             await saveUserProfile(formData);
-            navigation.replace('Home');
+            if (navigation.canGoBack()) {
+                navigation.goBack();
+            } else {
+                navigation.replace('Home');
+            }
         } catch (error) {
             console.error('Error saving profile:', error);
         }
@@ -83,11 +100,16 @@ export default function ProfileSetupScreen({ navigation }: Props) {
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={styles.header}>
+                        {hasExistingProfile && (
+                            <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+                                <MaterialCommunityIcons name="close" size={24} color={LIGHT_COLORS.textPrimary} />
+                            </TouchableOpacity>
+                        )}
                         <View style={styles.logoIcon}>
                             <MaterialCommunityIcons name="account-details" size={32} color={LIGHT_COLORS.accentPrimary} />
                         </View>
-                        <Text style={styles.title}>Complete Your Profile</Text>
-                        <Text style={styles.subtitle}>Help us personalize your nutrition insights</Text>
+                        <Text style={styles.title}>{hasExistingProfile ? 'Your Profile' : 'Complete Your Profile'}</Text>
+                        <Text style={styles.subtitle}>{hasExistingProfile ? 'Update your stats and goals' : 'Help us personalize your nutrition insights'}</Text>
                     </View>
 
                     <View style={styles.formContainer}>
@@ -195,6 +217,26 @@ export default function ProfileSetupScreen({ navigation }: Props) {
                             <MaterialCommunityIcons name="arrow-right" size={20} color="#fff" />
                         </LinearGradient>
                     </TouchableOpacity>
+
+                    {hasExistingProfile && (
+                        <TouchableOpacity
+                            style={styles.logoutButton}
+                            onPress={async () => {
+                                try {
+                                    await logout();
+                                    navigation.reset({
+                                        index: 0,
+                                        routes: [{ name: 'Onboarding' }],
+                                    });
+                                } catch (error) {
+                                    console.error('Logout failed:', error);
+                                }
+                            }}
+                        >
+                            <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
+                            <Text style={styles.logoutText}>Sign Out</Text>
+                        </TouchableOpacity>
+                    )}
                 </ScrollView>
             </KeyboardAvoidingView>
         </View>
@@ -361,5 +403,32 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '800',
         letterSpacing: 0.5,
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: LIGHT_COLORS.bgCard,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: LIGHT_COLORS.borderColor,
+        zIndex: 10,
+    },
+    logoutButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 20,
+        paddingVertical: 15,
+        gap: 8,
+    },
+    logoutText: {
+        color: '#EF4444',
+        fontSize: 16,
+        fontWeight: '700',
     },
 });
