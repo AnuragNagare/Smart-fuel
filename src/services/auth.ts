@@ -1,15 +1,29 @@
 import { supabase } from './supabase';
 
+// Safe default for usageStats — used whenever DB returns null/undefined
+const defaultUsageStats = () => ({
+    scansThisWeek: 0,
+    scansWeekStartDate: new Date().toISOString(),
+    scansToday: 0,
+    lastScanDate: new Date().toISOString(),
+    chatMessagesThisWeek: 0,
+    swapsToday: 0,
+    swapsDayDate: new Date().toISOString(),
+});
+
 export interface User {
     id: string;
     email: string;
     name: string;
     createdAt: string;
+    isPremium: boolean;
 
     // Usage tracking
     usageStats: {
         scansThisWeek: number;
         scansWeekStartDate: string;
+        scansToday: number;
+        lastScanDate: string;
         chatMessagesThisWeek: number;
         swapsToday: number;
         swapsDayDate: string;
@@ -51,14 +65,18 @@ export const signUp = async (
 
     // 2. Create the profile in public.users
     const now = new Date();
+    const isProTestUser = ['anuragnagare77@gmail.com', 'anandnagare77@gmail.com'].includes(email.toLowerCase());
     const newUserProfile = {
         id: authData.user.id,
         email: email.toLowerCase(),
         full_name: name,
         created_at: now.toISOString(),
+        is_premium: isProTestUser,
         usage_stats: {
             scansThisWeek: 0,
             scansWeekStartDate: now.toISOString(),
+            scansToday: 0,
+            lastScanDate: now.toISOString(),
             chatMessagesThisWeek: 0,
             swapsToday: 0,
             swapsDayDate: now.toISOString(),
@@ -78,6 +96,7 @@ export const signUp = async (
         email: email.toLowerCase(),
         name,
         createdAt: now.toISOString(),
+        isPremium: isProTestUser,
         usageStats: newUserProfile.usage_stats,
     };
 };
@@ -108,28 +127,26 @@ export const login = async (
         .single();
 
     if (profileError || !profileData) {
+        const isProTestUser = ['anuragnagare77@gmail.com', 'anandnagare77@gmail.com'].includes(email.toLowerCase());
         // Fallback for metadata if profile fails
         return {
             id: authData.user.id,
             email: authData.user.email || '',
             name: authData.user.user_metadata?.full_name || 'User',
             createdAt: authData.user.created_at,
-            usageStats: {
-                scansThisWeek: 0,
-                scansWeekStartDate: new Date().toISOString(),
-                chatMessagesThisWeek: 0,
-                swapsToday: 0,
-                swapsDayDate: new Date().toISOString(),
-            },
+            isPremium: isProTestUser,
+            usageStats: defaultUsageStats(),
         };
     }
 
+    const isProTestUser = ['anuragnagare77@gmail.com', 'anandnagare77@gmail.com'].includes(email.toLowerCase());
     return {
         id: profileData.id,
         email: profileData.email,
         name: profileData.name || profileData.full_name || 'User',
         createdAt: profileData.created_at,
-        usageStats: profileData.usage_stats,
+        isPremium: isProTestUser || profileData.is_premium || false,
+        usageStats: profileData.usage_stats ?? defaultUsageStats(),
     };
 };
 
@@ -146,27 +163,25 @@ export const getCurrentUser = async (): Promise<User | null> => {
             .single();
 
         if (profileError || !profileData) {
+            const isProTestUser = authUser.email ? ['anuragnagare77@gmail.com', 'anandnagare77@gmail.com'].includes(authUser.email.toLowerCase()) : false;
             return {
                 id: authUser.id,
                 email: authUser.email || '',
                 name: authUser.user_metadata?.full_name || 'User',
                 createdAt: authUser.created_at,
-                usageStats: {
-                    scansThisWeek: 0,
-                    scansWeekStartDate: new Date().toISOString(),
-                    chatMessagesThisWeek: 0,
-                    swapsToday: 0,
-                    swapsDayDate: new Date().toISOString(),
-                },
+                isPremium: isProTestUser,
+                usageStats: defaultUsageStats(),
             };
         }
 
+        const isProTestUser = authUser.email ? ['anuragnagare77@gmail.com', 'anandnagare77@gmail.com'].includes(authUser.email.toLowerCase()) : false;
         return {
             id: profileData.id,
             email: profileData.email,
-            name: profileData.name,
+            name: profileData.name || profileData.full_name || 'User',
             createdAt: profileData.created_at,
-            usageStats: profileData.usage_stats,
+            isPremium: isProTestUser || profileData.is_premium || false,
+            usageStats: profileData.usage_stats ?? defaultUsageStats(),
         };
     } catch (error) {
         console.error('Error getting current user:', error);
@@ -216,6 +231,7 @@ export const updateUser = async (updatedUser: User): Promise<void> => {
         .from('users')
         .update({
             name: updatedUser.name,
+            is_premium: updatedUser.isPremium,
             usage_stats: updatedUser.usageStats,
         })
         .eq('id', updatedUser.id);

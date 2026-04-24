@@ -31,7 +31,11 @@ export default function ProfileSetupScreen({ navigation }: Props) {
         location: '',
         height: '',
         weight: '',
+        heightUnit: 'cm',
+        weightUnit: 'kg',
     });
+    const [heightUnit, setHeightUnit] = useState<'cm' | 'ft'>('cm');
+    const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
     const [hasExistingProfile, setHasExistingProfile] = useState(false);
     const insets = useSafeAreaInsets();
 
@@ -41,6 +45,8 @@ export default function ProfileSetupScreen({ navigation }: Props) {
             if (profile) {
                 setHasExistingProfile(true);
                 setFormData(profile);
+                if (profile.heightUnit) setHeightUnit(profile.heightUnit);
+                if (profile.weightUnit) setWeightUnit(profile.weightUnit);
             }
         };
         loadProfile();
@@ -50,18 +56,70 @@ export default function ProfileSetupScreen({ navigation }: Props) {
         setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
+    const convertHeight = (val: string, from: 'cm' | 'ft', to: 'cm' | 'ft') => {
+        if (!val) return '';
+        const num = parseFloat(val);
+        if (isNaN(num)) return val;
+        if (from === to) return val;
+        if (to === 'ft') return (num / 30.48).toFixed(1);
+        return (num * 30.48).toFixed(1);
+    };
+
+    const convertWeight = (val: string, from: 'kg' | 'lbs', to: 'kg' | 'lbs') => {
+        if (!val) return '';
+        const num = parseFloat(val);
+        if (isNaN(num)) return val;
+        if (from === to) return val;
+        if (to === 'lbs') return (num * 2.20462).toFixed(1);
+        return (num / 2.20462).toFixed(1);
+    };
+
+    const handleHeightUnitChange = (newUnit: 'cm' | 'ft') => {
+        if (newUnit === heightUnit) return;
+        const converted = convertHeight(formData.height, heightUnit, newUnit);
+        setHeightUnit(newUnit);
+        setFormData(prev => ({ ...prev, height: converted, heightUnit: newUnit }));
+    };
+
+    const handleWeightUnitChange = (newUnit: 'kg' | 'lbs') => {
+        if (newUnit === weightUnit) return;
+        const converted = convertWeight(formData.weight, weightUnit, newUnit);
+        setWeightUnit(newUnit);
+        setFormData(prev => ({ ...prev, weight: converted, weightUnit: newUnit }));
+    };
+
     const calculateBMI = () => {
         if (formData.height && formData.weight) {
-            const heightInM = parseFloat(formData.height) / 100;
-            const weight = parseFloat(formData.weight);
-            return (weight / (heightInM * heightInM)).toFixed(1);
+            let heightInM = 0;
+            let weightInKg = 0;
+
+            if (heightUnit === 'cm') {
+                heightInM = parseFloat(formData.height) / 100;
+            } else {
+                heightInM = (parseFloat(formData.height) * 30.48) / 100;
+            }
+
+            if (weightUnit === 'kg') {
+                weightInKg = parseFloat(formData.weight);
+            } else {
+                weightInKg = parseFloat(formData.weight) / 2.20462;
+            }
+
+            if (heightInM > 0) {
+                return (weightInKg / (heightInM * heightInM)).toFixed(1);
+            }
         }
         return null;
     };
 
     const handleSubmit = async () => {
         try {
-            await saveUserProfile(formData);
+            const dataToSave = {
+                ...formData,
+                heightUnit,
+                weightUnit,
+            };
+            await saveUserProfile(dataToSave);
             if (navigation.canGoBack()) {
                 navigation.goBack();
             } else {
@@ -90,7 +148,7 @@ export default function ProfileSetupScreen({ navigation }: Props) {
 
             <KeyboardAvoidingView
                 style={styles.keyboardView}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
                 <ScrollView
                     contentContainerStyle={[
@@ -162,11 +220,27 @@ export default function ProfileSetupScreen({ navigation }: Props) {
 
                         <View style={styles.row}>
                             <View style={[styles.inputGroup, styles.halfWidth]}>
-                                <Text style={styles.label}>Height (cm)</Text>
+                                <View style={styles.labelRow}>
+                                    <Text style={styles.label}>Height</Text>
+                                    <View style={styles.unitToggleContainer}>
+                                        <TouchableOpacity
+                                            style={[styles.unitBtn, heightUnit === 'cm' && styles.unitBtnActive]}
+                                            onPress={() => handleHeightUnitChange('cm')}
+                                        >
+                                            <Text style={[styles.unitBtnText, heightUnit === 'cm' && styles.unitBtnTextActive]}>cm</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[styles.unitBtn, heightUnit === 'ft' && styles.unitBtnActive]}
+                                            onPress={() => handleHeightUnitChange('ft')}
+                                        >
+                                            <Text style={[styles.unitBtnText, heightUnit === 'ft' && styles.unitBtnTextActive]}>ft</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <View style={styles.inputContainer}>
                                     <TextInput
                                         style={styles.input}
-                                        placeholder="170"
+                                        placeholder={heightUnit === 'cm' ? "170" : "5.6"}
                                         placeholderTextColor={LIGHT_COLORS.textPlaceholder}
                                         value={formData.height}
                                         onChangeText={(text) => updateField('height', text)}
@@ -176,11 +250,27 @@ export default function ProfileSetupScreen({ navigation }: Props) {
                             </View>
 
                             <View style={[styles.inputGroup, styles.halfWidth]}>
-                                <Text style={styles.label}>Weight (kg)</Text>
+                                <View style={styles.labelRow}>
+                                    <Text style={styles.label}>Weight</Text>
+                                    <View style={styles.unitToggleContainer}>
+                                        <TouchableOpacity
+                                            style={[styles.unitBtn, weightUnit === 'kg' && styles.unitBtnActive]}
+                                            onPress={() => handleWeightUnitChange('kg')}
+                                        >
+                                            <Text style={[styles.unitBtnText, weightUnit === 'kg' && styles.unitBtnTextActive]}>kg</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[styles.unitBtn, weightUnit === 'lbs' && styles.unitBtnActive]}
+                                            onPress={() => handleWeightUnitChange('lbs')}
+                                        >
+                                            <Text style={[styles.unitBtnText, weightUnit === 'lbs' && styles.unitBtnTextActive]}>lbs</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                                 <View style={styles.inputContainer}>
                                     <TextInput
                                         style={styles.input}
-                                        placeholder="70"
+                                        placeholder={weightUnit === 'kg' ? "70" : "154"}
                                         placeholderTextColor={LIGHT_COLORS.textPlaceholder}
                                         value={formData.weight}
                                         onChangeText={(text) => updateField('weight', text)}
@@ -322,8 +412,40 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         color: LIGHT_COLORS.textPrimary,
-        marginBottom: 8,
         marginLeft: 4,
+    },
+    labelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    unitToggleContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        padding: 2,
+    },
+    unitBtn: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    unitBtnActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    unitBtnText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: LIGHT_COLORS.textMuted,
+    },
+    unitBtnTextActive: {
+        color: LIGHT_COLORS.accentPrimary,
     },
     inputContainer: {
         flexDirection: 'row',

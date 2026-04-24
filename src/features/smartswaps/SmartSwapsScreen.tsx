@@ -13,8 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
 import { getCurrentUser, User } from '../../services/auth';
 import { getMealHistory } from '../../services/history';
-import { chatWithFuelBot } from '../../services/fuelbot';
+import { chatWithNutriBot } from '../../services/nutribot';
 import { getUserProfile } from '../../services/storage';
+import ProGuard from '../../components/ProGuard';
 
 interface FoodItem {
     name: string;
@@ -33,7 +34,7 @@ interface Swap {
     faster: FoodItem;
 }
 
-export default function SmartSwapsScreen() {
+export default function SmartSwapsScreen({ navigation }: any) {
     const [authUser, setAuthUser] = useState<User | null>(null);
     const insets = useSafeAreaInsets();
     
@@ -110,7 +111,7 @@ Return EXACTLY a raw JSON object (with NO markdown around it) with this exact st
   "cheaper": { "name": "...", "calories": 500, "protein": 25, "carbs": 40, "fat": 12, "cost": 4, "time": 20 },
   "faster": { "name": "...", "calories": 450, "protein": 28, "carbs": 30, "fat": 15, "cost": 9, "time": 8 }
 }`;
-            const response = await chatWithFuelBot(prompt, [], userContext);
+            const response = await chatWithNutriBot(prompt, [], userContext);
             const jsonMatch = response.match(/\{[\s\S]*\}/);
             const jsonString = jsonMatch ? jsonMatch[0] : response.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
             const alternatives = JSON.parse(jsonString);
@@ -145,7 +146,7 @@ Return EXACTLY a raw JSON object (with NO markdown around it) with this exact st
         setLoadingRecipeFor(meal.name);
         try {
             const prompt = `Give me a short, simple recipe and cooking instructions for ${meal.name}. It should take around ${meal.time} minutes and include budget-friendly ingredients if possible. Format nicely as plain text.`;
-            const response = await chatWithFuelBot(prompt, [], userContext);
+            const response = await chatWithNutriBot(prompt, [], userContext);
             Alert.alert(`Recipe: ${meal.name}`, response);
         } catch (error) {
             console.error('Failed to get recipe:', error);
@@ -231,82 +232,88 @@ Return EXACTLY a raw JSON object (with NO markdown around it) with this exact st
             colors={[LIGHT_COLORS.bgPrimary, LIGHT_COLORS.bgGradientEnd]}
             style={styles.container}
         >
-            {/* Paywall Modal Removed */}
-            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
-                <View style={styles.logoIcon}>
-                    <Text style={styles.logoEmoji}>🔄</Text>
+            <ProGuard
+                isPremium={authUser?.isPremium || false}
+                featureName="Elite Smart Swaps"
+                onUpgrade={() => navigation.navigate('Premium')}
+            >
+                {/* Paywall Modal Removed */}
+                <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
+                    <View style={styles.logoIcon}>
+                        <Text style={styles.logoEmoji}>🔄</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.headerTitle}>Smart Swaps</Text>
+                        <Text style={styles.headerSubtitle}>Healthier Alternatives</Text>
+                    </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.headerTitle}>Smart Swaps</Text>
-                    <Text style={styles.headerSubtitle}>Healthier Alternatives</Text>
-                </View>
-            </View>
 
-            {/* Usage Meter removed for free release */}
+                {/* Usage Meter removed for free release */}
 
-            {/* Meal Selector */}
-            {historyMeals.length === 0 && !isLoading ? (
-                <View style={{ padding: LIGHT_SPACING.xl, alignItems: 'center', marginTop: 40 }}>
-                    <Text style={{ fontSize: 48, marginBottom: 10 }}>📷</Text>
-                    <Text style={{ fontSize: 18, color: LIGHT_COLORS.textPrimary, textAlign: 'center', fontWeight: '600' }}>
-                        No Meals Found
-                    </Text>
-                    <Text style={{ fontSize: 14, color: LIGHT_COLORS.textSecondary, textAlign: 'center', marginTop: 8 }}>
-                        Go to the Home tab and use the camera to log your first meal. Your Smart Swaps will appear here!
-                    </Text>
-                </View>
-            ) : (
-                <>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.mealSelector}
-                    contentContainerStyle={styles.mealSelectorContent}
-                >
-                    {historyMeals.map((meal, index) => (
-                        <TouchableOpacity
-                            key={index}
-                            style={[
-                                styles.mealChip,
-                                selectedMealIndex === index && styles.mealChipActive,
-                            ]}
-                            onPress={() => generateSwaps(index, meal)}
-                            disabled={isGenerating}
-                        >
-                            <Text style={[
-                                styles.mealChipText,
-                                selectedMealIndex === index && styles.mealChipTextActive,
-                            ]}>
-                                {meal.name}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                {isLoading || isGenerating ? (
-                    <View style={{ marginTop: 60, alignItems: 'center' }}>
-                        <ActivityIndicator size="large" color={LIGHT_COLORS.accentPrimary} />
-                        <Text style={{ marginTop: 16, color: LIGHT_COLORS.textSecondary }}>
-                            {isGenerating ? "FuelBot is analyzing alternatives..." : "Loading meal history..."}
+                {/* Meal Selector */}
+                {historyMeals.length === 0 && !isLoading ? (
+                    <View style={{ padding: LIGHT_SPACING.xl, alignItems: 'center', marginTop: 40 }}>
+                        <Text style={{ fontSize: 48, marginBottom: 10 }}>📷</Text>
+                        <Text style={{ fontSize: 18, color: LIGHT_COLORS.textPrimary, textAlign: 'center', fontWeight: '600' }}>
+                            No Meals Found
+                        </Text>
+                        <Text style={{ fontSize: 14, color: LIGHT_COLORS.textSecondary, textAlign: 'center', marginTop: 8 }}>
+                            Go to the Home tab and use the camera to log your first meal. Your Smart Swaps will appear here!
                         </Text>
                     </View>
-                ) : swapsCache[selectedMealIndex] ? (
+                ) : (
                     <>
-                        {renderMealCard(swapsCache[selectedMealIndex].original, 'Your Original Meal', '🍽️')}
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.mealSelector}
+                        contentContainerStyle={styles.mealSelectorContent}
+                    >
+                        {historyMeals.map((meal, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                style={[
+                                    styles.mealChip,
+                                    selectedMealIndex === index && styles.mealChipActive,
+                                ]}
+                                onPress={() => generateSwaps(index, meal)}
+                                disabled={isGenerating}
+                            >
+                                <Text style={[
+                                    styles.mealChipText,
+                                    selectedMealIndex === index && styles.mealChipTextActive,
+                                ]}>
+                                    {meal.name}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
 
-                        <Text style={styles.sectionTitle}>Smart Alternatives</Text>
+                <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+                    {isLoading || isGenerating ? (
+                        <View style={{ marginTop: 60, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color={LIGHT_COLORS.accentPrimary} />
+                            <Text style={{ marginTop: 16, color: LIGHT_COLORS.textSecondary }}>
+                                {isGenerating ? "NutriBot is analyzing alternatives..." : "Loading meal history..."}
+                            </Text>
+                        </View>
+                    ) : swapsCache[selectedMealIndex] ? (
+                        <>
+                            {renderMealCard(swapsCache[selectedMealIndex].original, 'Your Original Meal', '🍽️')}
 
-                        {renderMealCard(swapsCache[selectedMealIndex].healthier, 'Healthier Option', '🥗', 'healthier')}
-                        {renderMealCard(swapsCache[selectedMealIndex].cheaper, 'Budget-Friendly', '💰', 'cheaper')}
-                        {renderMealCard(swapsCache[selectedMealIndex].faster, 'Quick Option', '⚡', 'faster')}
+                            <Text style={styles.sectionTitle}>Smart Alternatives</Text>
 
-                        <View style={{ height: insets.bottom + 20 }} />
-                    </>
-                ) : null}
-            </ScrollView>
-            </>
-            )}
+                            {renderMealCard(swapsCache[selectedMealIndex].healthier, 'Healthier Option', '🥗', 'healthier')}
+                            {renderMealCard(swapsCache[selectedMealIndex].cheaper, 'Budget-Friendly', '💰', 'cheaper')}
+                            {renderMealCard(swapsCache[selectedMealIndex].faster, 'Quick Option', '⚡', 'faster')}
+
+                            <View style={{ height: insets.bottom + 20 }} />
+                        </>
+                    ) : null}
+                </ScrollView>
+                </>
+                )}
+            </ProGuard>
         </LinearGradient>
     );
 }

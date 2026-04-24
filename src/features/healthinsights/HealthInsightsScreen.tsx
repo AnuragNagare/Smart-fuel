@@ -11,16 +11,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { LineChart, ProgressChart } from 'react-native-chart-kit';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
 import { getMealHistory, MealRecord } from '../../services/history';
-import { chatWithFuelBot } from '../../services/fuelbot';
+import { chatWithNutriBot } from '../../services/nutribot';
 import { getUserProfile, getBMI } from '../../services/storage';
 import { getCurrentUser } from '../../services/auth';
+import ProGuard from '../../components/ProGuard';
 
 const screenWidth = Dimensions.get('window').width;
 
-export default function HealthInsightsScreen() {
+export default function HealthInsightsScreen({ navigation }: any) {
     const [isLoading, setIsLoading] = React.useState(true);
     const [avgCalories, setAvgCalories] = React.useState(0);
     const [targetCalories, setTargetCalories] = React.useState(2000);
+    const [isPremium, setIsPremium] = useState(false);
 
     const [weightData] = useState({
         labels: ['Jan 1', 'Jan 8', 'Jan 15', 'Jan 22', 'Today'],
@@ -61,6 +63,8 @@ export default function HealthInsightsScreen() {
             const profile = await getUserProfile();
             const bmi = await getBMI();
             const userContext = profile ? { ...profile, bmi: bmi || undefined } : undefined;
+            
+            setIsPremium(user.isPremium);
             
             // Set dynamic targets based on weight profile if exists
             const currentWeight = profile?.weight ? Number(profile.weight) : 0;
@@ -136,7 +140,7 @@ Protein: ${avgProtein}g (Target: ${Math.round(targetProtein)}g)
 Carbs: ${avgCarbs}g.`;
 
                 try {
-                    const aiResponse = await chatWithFuelBot(
+                    const aiResponse = await chatWithNutriBot(
                         dataContext + ` Based on this explicit nutrient data, provide EXACTLY 3 short, highly personalized health/diet insights for me. Return a JSON array of objects. Format: [{"icon": "emoji", "title": "Short Title", "text": "Short 1-sentence insight"}].`,
                         [],
                         userContext
@@ -197,7 +201,12 @@ Carbs: ${avgCarbs}g.`;
                 </View>
             </View>
 
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+            <ProGuard
+                isPremium={isPremium}
+                featureName="Predictive Health Analytics"
+                onUpgrade={() => (navigation as any).navigate('Premium')}
+            >
+                <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
                 {isLoading ? (
                     <View style={{ marginTop: 40 }}>
                         <ActivityIndicator size="large" color={LIGHT_COLORS.accentPrimary} />
@@ -281,6 +290,7 @@ Carbs: ${avgCarbs}g.`;
                     </>
                 )}
             </ScrollView>
+            </ProGuard>
         </LinearGradient>
     );
 }

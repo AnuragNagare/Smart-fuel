@@ -14,7 +14,7 @@ import { getTodaysDeals, DealOffer } from '../../services/deals';
 import { getUserProfile, getBMI } from '../../services/storage';
 import { getCurrentUser } from '../../services/auth';
 import { getMealHistory } from '../../services/history';
-import { chatWithFuelBot } from '../../services/fuelbot';
+import { chatWithNutriBot } from '../../services/nutribot';
 
 interface CheatMeal {
     name: string;
@@ -90,7 +90,7 @@ export default function CheatMealScreen() {
 
                 if (weeklyDeficit > 0) {
                     const prompt = `Based on a mathematical weekly caloric deficit of ${weeklyDeficit} calories for a user trying to stay fit, what is the best day of the week to take a cheat meal and why? Return purely a raw JSON object (no markdown): {"day": "Friday", "reason": "Because..."}`;
-                    const res = await chatWithFuelBot(prompt, [], { ...profile, bmi } as any);
+                    const res = await chatWithNutriBot(prompt, [], { ...profile, bmi } as any);
                     const jsonMatch = res.match(/\{[\s\S]*\}/);
                     const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : res.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
                     setBestDay({ day: parsed.day || 'Friday', reason: parsed.reason || `You earned it with a ${weeklyDeficit} cal deficit.` });
@@ -134,7 +134,7 @@ export default function CheatMealScreen() {
     { "day": "Day 3", "text": "..." }
   ]
 }`;
-            const res = await chatWithFuelBot(prompt, [], userContext);
+            const res = await chatWithNutriBot(prompt, [], userContext);
             const jsonMatch = res.match(/\{[\s\S]*\}/);
             const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : res.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim());
             
@@ -244,7 +244,7 @@ export default function CheatMealScreen() {
                     {isOptimizing || !optimizerData ? (
                         <View style={{ padding: 40, alignItems: 'center' }}>
                             <ActivityIndicator size="large" color="#ff9500" />
-                            <Text style={{ marginTop: 10, color: LIGHT_COLORS.textSecondary }}>FuelBot is calculating impact...</Text>
+                            <Text style={{ marginTop: 10, color: LIGHT_COLORS.textSecondary }}>NutriBot is calculating impact...</Text>
                         </View>
                     ) : (
                         <>

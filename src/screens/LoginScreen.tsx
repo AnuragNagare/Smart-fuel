@@ -62,7 +62,7 @@ export default function LoginScreen({ navigation }: Props) {
 
             <KeyboardAvoidingView
                 style={styles.keyboardView}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
                 <ScrollView
                     contentContainerStyle={[
@@ -77,7 +77,7 @@ export default function LoginScreen({ navigation }: Props) {
                         <View style={styles.logoIcon}>
                             <MaterialCommunityIcons name="leaf" size={24} color={LIGHT_COLORS.accentPrimary} />
                         </View>
-                        <Text style={styles.logoText}>SmartFuel</Text>
+                        <Text style={styles.logoText}>NutriBot</Text>
                     </View>
 
                     {/* Welcome Header */}
@@ -102,7 +102,7 @@ export default function LoginScreen({ navigation }: Props) {
                                 />
                                 <TextInput
                                     style={styles.input}
-                                    placeholder="hello@smartfuel.app"
+                                    placeholder="hello@nutribot.app"
                                     placeholderTextColor={LIGHT_COLORS.textPlaceholder}
                                     value={email}
                                     onChangeText={setEmail}
@@ -169,7 +169,7 @@ export default function LoginScreen({ navigation }: Props) {
 
                         {/* Sign Up Navigation */}
                         <View style={styles.signupContainer}>
-                            <Text style={styles.signupText}>New to SmartFuel? </Text>
+                            <Text style={styles.signupText}>New to NutriBot? </Text>
                             <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
                                 <Text style={styles.signupLink}>Create Account</Text>
                             </TouchableOpacity>

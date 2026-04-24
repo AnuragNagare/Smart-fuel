@@ -12,6 +12,7 @@ import ProfileSetupScreen from '../screens/ProfileSetupScreen';
 import TabNavigator from './TabNavigator';
 import CameraScreen from '../screens/CameraScreen';
 import ResultsScreen from '../screens/ResultsScreen';
+import PremiumScreen from '../screens/PremiumScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -55,6 +56,13 @@ export default function AppNavigator() {
                     }}
                 />
                 <Stack.Screen name="Results" component={ResultsScreen} />
+                <Stack.Screen 
+                    name="Premium" 
+                    component={PremiumScreen} 
+                    options={{
+                        presentation: 'modal',
+                    }}
+                />
             </Stack.Navigator>
         </NavigationContainer>
     );

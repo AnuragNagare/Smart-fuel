@@ -9,6 +9,7 @@ import {
     Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LoadingScreen from '../components/LoadingScreen';
 import { getMealHistory, MealRecord } from '../services/history';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +17,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, UserProfile } from '../types';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../constants/lightTheme';
 import { getUserProfile, getBMI } from '../services/storage';
+import { scheduleLocalNotification } from '../services/notification';
 import { getCurrentUser, User } from '../services/auth';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,13 +49,39 @@ export default function HomeScreen({ navigation }: Props) {
             const savedBmi = await getBMI();
             const currentUser = await getCurrentUser();
 
+            if (currentUser) {
+                // Ensure usageStats always has a safe default (may be undefined for new users)
+                if (!currentUser.usageStats) {
+                    currentUser.usageStats = {
+                        scansThisWeek: 0,
+                        scansWeekStartDate: new Date().toISOString(),
+                        scansToday: 0,
+                        lastScanDate: new Date().toISOString(),
+                        chatMessagesThisWeek: 0,
+                        swapsToday: 0,
+                        swapsDayDate: new Date().toISOString(),
+                    };
+                }
+
+                // Reset daily scans if it's a new day
+                const today = new Date().toDateString();
+                const lastScanDate = currentUser.usageStats.lastScanDate
+                    ? new Date(currentUser.usageStats.lastScanDate).toDateString()
+                    : '';
+
+                if (today !== lastScanDate) {
+                    currentUser.usageStats.scansToday = 0;
+                    currentUser.usageStats.lastScanDate = new Date().toISOString();
+                    const { updateUser } = await import('../services/auth');
+                    await updateUser(currentUser);
+                }
+
+                loadHistory(currentUser.id);
+            }
+
             setUserProfile(profile);
             setBmi(savedBmi);
             setAuthUser(currentUser);
-
-            if (currentUser) {
-                loadHistory(currentUser.id);
-            }
         } catch (error) {
             console.error('Load user data error:', error);
         }
@@ -71,16 +99,47 @@ export default function HomeScreen({ navigation }: Props) {
         }
     };
 
+    const checkScanLimit = () => {
+        if (!authUser) return false;
+        if (authUser.isPremium) return true;
+        
+        if (authUser.usageStats.scansToday >= 3) {
+            scheduleLocalNotification(
+                "🚀 Daily Limit Reached",
+                "You've used your 3 free scans for today. Upgrade to NutriBot Pro for unlimited elite analysis!"
+            );
+            Alert.alert(
+                "🚀 Daily Limit Reached",
+                "Free users get 3 scans per day. Upgrade to Pro for unlimited scans!",
+                [
+                    { text: "Maybe Later", style: "cancel" },
+                    { text: "Go Pro", onPress: () => navigation.navigate('Premium') }
+                ]
+            );
+            return false;
+        }
+        return true;
+    };
+
     const handleCamera = () => {
-        navigation.navigate('Camera');
+        if (checkScanLimit()) {
+            navigation.navigate('Camera');
+        }
     };
 
     const handleGallery = async () => {
-        // Check if user is authenticated
-        if (!authUser) {
+        // Check if user is authenticated — fall back to live Supabase check
+        // to avoid false "login required" from async state not yet loaded
+        let currentUser = authUser;
+        if (!currentUser) {
+            currentUser = await getCurrentUser();
+        }
+        if (!currentUser) {
             Alert.alert('Login Required', 'Please login to scan meals.');
             return;
         }
+        // Sync state so the rest of the function can use it
+        if (!authUser) setAuthUser(currentUser);
 
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
@@ -89,10 +148,10 @@ export default function HomeScreen({ navigation }: Props) {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: 'images',
             allowsEditing: true,
             aspect: [4, 3],
-            quality: 0.2, // Lower quality to keep payload small for Groq Vision
+            quality: 0.7, // Higher quality for better AI vision analysis
             base64: true,
         });
 
@@ -104,9 +163,10 @@ export default function HomeScreen({ navigation }: Props) {
             setIsAnalyzing(true);
 
             try {
-                // Import the analyzeFood function
+                // Import necessary services
                 const { analyzeFood } = await import('../services/api');
                 const { getUserProfile, getBMI } = await import('../services/storage');
+                const { updateUser } = await import('../services/auth');
 
                 // Get user profile for personalized insights
                 const profile = await getUserProfile();
@@ -123,6 +183,14 @@ export default function HomeScreen({ navigation }: Props) {
                 // Analyze the image
                 const report = await analyzeFood(base64Image, userProfile);
 
+                // Increment scan count if not premium
+                if (currentUser && !currentUser.isPremium) {
+                    currentUser.usageStats.scansToday += 1;
+                    currentUser.usageStats.lastScanDate = new Date().toISOString();
+                    await updateUser(currentUser);
+                    setAuthUser({ ...currentUser }); // update state too
+                }
+
                 // Navigate to results with actual data
                 navigation.navigate('Results', {
                     report,
@@ -137,6 +205,10 @@ export default function HomeScreen({ navigation }: Props) {
         }
     };
 
+    const handleGoPremium = () => {
+        navigation.navigate('Premium');
+    };
+
     return (
         <LinearGradient
             colors={[LIGHT_COLORS.bgPrimary, LIGHT_COLORS.bgGradientEnd]}
@@ -149,9 +221,40 @@ export default function HomeScreen({ navigation }: Props) {
             <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
                     <Text style={styles.emoji}>🍽️</Text>
-                    <Text style={styles.title}>SmartFuel</Text>
+                    <Text style={styles.title}>NutriBot</Text>
                     <Text style={styles.subtitle}>AI-Powered Nutrition Analysis</Text>
                 </View>
+
+                {/* Premium Banner */}
+                <TouchableOpacity 
+                    style={[styles.premiumBanner, authUser?.isPremium && styles.premiumBannerHidden]} 
+                    onPress={handleGoPremium}
+                    activeOpacity={0.9}
+                    disabled={authUser?.isPremium}
+                >
+                    <LinearGradient
+                        colors={['#0d1b12', '#1a2e21']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.premiumGradient}
+                    >
+                        <View style={styles.premiumContent}>
+                            <View style={styles.premiumTextContainer}>
+                                <Text style={styles.premiumTitle}>
+                                    {authUser?.isPremium ? 'NutriBot Pro Active' : 'NutriBot Pro'}
+                                </Text>
+                                <Text style={styles.premiumSubtitle}>
+                                    {authUser?.isPremium ? 'Unlimited access enabled' : 'Get unlimited AI scans & pro plans'}
+                                </Text>
+                            </View>
+                            <View style={[styles.premiumTag, authUser?.isPremium && { backgroundColor: '#ffd700' }]}>
+                                <Text style={styles.premiumTagText}>
+                                    {authUser?.isPremium ? 'ELITE' : 'UPGRADE'}
+                                </Text>
+                            </View>
+                        </View>
+                    </LinearGradient>
+                </TouchableOpacity>
 
                 {userProfile ? (
                     <TouchableOpacity
@@ -164,10 +267,14 @@ export default function HomeScreen({ navigation }: Props) {
                         <View style={styles.userInfo}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                 <Text style={styles.userName}>{userProfile.name}</Text>
-                                {/* PremiumBadge removed for free release */}
+                                {authUser?.isPremium && (
+                                    <View style={styles.proBadgeSmall}>
+                                        <Text style={styles.proBadgeTextSmall}>PRO</Text>
+                                    </View>
+                                )}
                             </View>
                             <Text style={styles.userStats}>
-                                {userProfile.height}cm • {userProfile.weight}kg
+                                {userProfile.height}{userProfile.heightUnit || 'cm'} • {userProfile.weight}{userProfile.weightUnit || 'kg'}
                             </Text>
                         </View>
                         {bmi && (
@@ -188,7 +295,35 @@ export default function HomeScreen({ navigation }: Props) {
                     </TouchableOpacity>
                 )}
 
-                {/* Usage Meters removed for free release */}
+                {/* Usage Statistics */}
+                <View style={styles.usageSection}>
+                    <View style={styles.usageHeader}>
+                        <Text style={styles.usageTitle}>
+                            {authUser?.isPremium ? 'PRO STATUS' : 'DAILY AI SCANS'}
+                        </Text>
+                        <Text style={[styles.usageCount, authUser?.isPremium && { color: '#ffd700' }]}>
+                            {authUser?.isPremium ? 'Unlimited' : `${authUser?.usageStats?.scansToday || 0} / 3 Used`}
+                        </Text>
+                    </View>
+                    <View style={styles.meterBackground}>
+                        <LinearGradient
+                            colors={authUser?.isPremium ? ['#ffd700', '#b8860b'] : [LIGHT_COLORS.accentPrimary, '#0db846']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={[
+                                styles.meterFill, 
+                                { width: authUser?.isPremium ? '100%' : `${((authUser?.usageStats?.scansToday || 0) / 3) * 100}%` }
+                            ]}
+                        />
+                    </View>
+                    {!authUser?.isPremium && (
+                        <TouchableOpacity onPress={handleGoPremium}>
+                            <Text style={styles.usageHint}>
+                                Upgrade to <Text style={styles.proLink}>Pro</Text> for unlimited elite analysis →
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
 
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>📸 CAPTURE YOUR MEAL</Text>
@@ -350,6 +485,52 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     usageSection: {
+        backgroundColor: LIGHT_COLORS.bgCard,
+        padding: LIGHT_SPACING.lg,
+        borderRadius: LIGHT_RADIUS.lg,
+        marginBottom: LIGHT_SPACING.xl,
+        borderWidth: 1,
+        borderColor: LIGHT_COLORS.borderColor,
+    },
+    usageHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        marginBottom: 10,
+    },
+    usageTitle: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: LIGHT_COLORS.textMuted,
+        letterSpacing: 1,
+    },
+    usageCount: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: LIGHT_COLORS.textPrimary,
+    },
+    meterBackground: {
+        height: 8,
+        backgroundColor: '#e5e7eb',
+        borderRadius: 4,
+        overflow: 'hidden',
+        marginBottom: 12,
+    },
+    meterFill: {
+        height: '100%',
+        borderRadius: 4,
+    },
+    usageHint: {
+        fontSize: 11,
+        color: LIGHT_COLORS.textSecondary,
+        textAlign: 'center',
+        fontWeight: '500',
+    },
+    proLink: {
+        color: LIGHT_COLORS.accentPrimary,
+        fontWeight: '800',
+    },
+    usageSectionBox: {
         marginBottom: LIGHT_SPACING.lg,
     },
     card: {
@@ -475,5 +656,65 @@ const styles = StyleSheet.create({
     scoreTagText: {
         fontSize: 10,
         fontWeight: '800',
+    },
+    premiumBanner: {
+        marginBottom: LIGHT_SPACING.xl,
+        borderRadius: LIGHT_RADIUS.lg,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#13ec5b30',
+        elevation: 4,
+        shadowColor: '#13ec5b',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+    },
+    premiumGradient: {
+        padding: 16,
+    },
+    premiumContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    premiumTextContainer: {
+        flex: 1,
+    },
+    premiumTitle: {
+        color: '#13ec5b',
+        fontSize: 18,
+        fontWeight: '800',
+        marginBottom: 2,
+    },
+    premiumSubtitle: {
+        color: '#ffffff80',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    premiumTag: {
+        backgroundColor: '#13ec5b',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    premiumTagText: {
+        color: '#000',
+        fontSize: 10,
+        fontWeight: '900',
+    },
+    premiumBannerHidden: {
+        opacity: 0.8,
+        borderColor: '#ffd70030',
+    },
+    proBadgeSmall: {
+        backgroundColor: '#ffd700',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    proBadgeTextSmall: {
+        fontSize: 8,
+        fontWeight: '800',
+        color: '#000',
     },
 });

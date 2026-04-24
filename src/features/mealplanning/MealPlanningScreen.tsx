@@ -10,8 +10,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../../constants/lightTheme';
-import { chatWithFuelBot } from '../../services/fuelbot';
+import { chatWithNutriBot } from '../../services/nutribot';
 import { getUserProfile, getBMI } from '../../services/storage';
+import { getCurrentUser } from '../../services/auth';
+import ProGuard from '../../components/ProGuard';
 
 interface Meal {
     name: string;
@@ -29,7 +31,7 @@ interface DayPlan {
     dinner: Meal;
 }
 
-export default function MealPlanningScreen() {
+export default function MealPlanningScreen({ navigation }: any) {
     const [weekPlan, setWeekPlan] = useState<DayPlan[]>(generateWeekPlan());
     const [selectedDay, setSelectedDay] = useState(0);
     const [isReplacing, setIsReplacing] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export default function MealPlanningScreen() {
     const [isRegeneratingAll, setIsRegeneratingAll] = useState(false);
     const [isGeneratingList, setIsGeneratingList] = useState(false);
     const [userContext, setUserContext] = useState<any>(null);
+    const [isPremium, setIsPremium] = useState(false);
 
     React.useEffect(() => {
         loadUserData();
@@ -46,6 +49,12 @@ export default function MealPlanningScreen() {
         try {
             const profile = await getUserProfile();
             const bmi = await getBMI();
+            const user = await getCurrentUser();
+            
+            if (user) {
+                setIsPremium(user.isPremium);
+            }
+
             if (profile) {
                 setUserContext({
                     name: profile.name,
@@ -100,7 +109,7 @@ export default function MealPlanningScreen() {
         const mealKey = `${dayName}-${mealType}`;
         setIsLoadingRecipe(mealKey);
         try {
-            const response = await chatWithFuelBot(
+            const response = await chatWithNutriBot(
                 `Give me a short, simple recipe and cooking instructions for ${meal.name}. Format nicely as plain text.`,
                 [],
                 userContext
@@ -117,7 +126,7 @@ export default function MealPlanningScreen() {
         const mealKey = `${dayName}-${mealType}`;
         setIsReplacing(mealKey);
         try {
-            const response = await chatWithFuelBot(
+            const response = await chatWithNutriBot(
                 `Give me one single alternative meal for ${mealType} instead of ${currentMeal.name}. Reply EXACTLY and ONLY with a valid JSON object in this format: {"name": "Meal Name", "calories": 400, "protein": 30, "carbs": 40, "fat": 15}. Do not include markdown or any other text, just raw JSON.`,
                 [],
                 userContext
@@ -145,7 +154,7 @@ export default function MealPlanningScreen() {
     const handleRegenerateAll = async () => {
         setIsRegeneratingAll(true);
         try {
-            const response = await chatWithFuelBot(
+            const response = await chatWithNutriBot(
                 `Generate a full healthy day of eating with exactly 1 Breakfast, 1 Lunch, and 1 Dinner. Reply EXACTLY and ONLY with a valid JSON array of 3 objects in this exact format: [{"name": "Meal Name", "calories": 400, "protein": 30, "carbs": 40, "fat": 15}]. The first object must be breakfast, second lunch, third dinner. DO NOT include any conversational text.`,
                 [],
                 userContext
@@ -181,7 +190,7 @@ export default function MealPlanningScreen() {
         setIsGeneratingList(true);
         const currentMeals = weekPlan[selectedDay];
         try {
-             const response = await chatWithFuelBot(
+             const response = await chatWithNutriBot(
                 `Here are my meals for today:\nBreakfast: ${currentMeals.breakfast.name}\nLunch: ${currentMeals.lunch.name}\nDinner: ${currentMeals.dinner.name}\n\nGenerate a clear, bulleted grocery list categorized by produce, meats, pantry, etc., needed to cook these 3 meals. Keep it concise.`,
                 [],
                 userContext
@@ -262,93 +271,99 @@ export default function MealPlanningScreen() {
             colors={[LIGHT_COLORS.bgPrimary, LIGHT_COLORS.bgGradientEnd]}
             style={styles.container}
         >
-            <View style={styles.header}>
-                <View style={styles.logoIcon}>
-                    <Text style={styles.logoEmoji}>📅</Text>
-                </View>
-                <View>
-                    <Text style={styles.headerTitle}>Meal Planning</Text>
-                    <Text style={styles.headerSubtitle}>AI-Generated Weekly Plan</Text>
-                </View>
-            </View>
-
-            {/* Week Selector */}
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.weekSelector}
-                contentContainerStyle={styles.weekSelectorContent}
+            <ProGuard 
+                isPremium={isPremium} 
+                featureName="Weekly Meal Planning" 
+                onUpgrade={() => navigation.navigate('Premium')}
             >
-                {weekPlan.map((dayPlan, index) => (
-                    <TouchableOpacity
-                        key={index}
-                        style={[
-                            styles.dayChip,
-                            selectedDay === index && styles.dayChipActive,
-                        ]}
-                        onPress={() => setSelectedDay(index)}
+                <View style={styles.header}>
+                    <View style={styles.logoIcon}>
+                        <Text style={styles.logoEmoji}>📅</Text>
+                    </View>
+                    <View>
+                        <Text style={styles.headerTitle}>Meal Planning</Text>
+                        <Text style={styles.headerSubtitle}>AI-Generated Weekly Plan</Text>
+                    </View>
+                </View>
+
+                {/* Week Selector */}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.weekSelector}
+                    contentContainerStyle={styles.weekSelectorContent}
+                >
+                    {weekPlan.map((dayPlan, index) => (
+                        <TouchableOpacity
+                            key={index}
+                            style={[
+                                styles.dayChip,
+                                selectedDay === index && styles.dayChipActive,
+                            ]}
+                            onPress={() => setSelectedDay(index)}
+                        >
+                            <Text style={[
+                                styles.dayLabel,
+                                selectedDay === index && styles.dayLabelActive,
+                            ]}>
+                                {dayPlan.day}
+                            </Text>
+                            <Text style={[
+                                styles.dateLabel,
+                                selectedDay === index && styles.dateLabelActive,
+                            ]}>
+                                {dayPlan.date}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+
+                {/* Daily Summary */}
+                <View style={styles.summaryCard}>
+                    <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Total Calories</Text>
+                        <Text style={styles.summaryValue}>{totalCalories} cal</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Total Protein</Text>
+                        <Text style={styles.summaryValue}>{totalProtein}g</Text>
+                    </View>
+                </View>
+
+                {/* Meals List */}
+                <ScrollView style={styles.mealsContainer} showsVerticalScrollIndicator={false}>
+                    {renderMealCard('Breakfast', currentDay.breakfast, '🌅', selectedDay, currentDay.day)}
+                    {renderMealCard('Lunch', currentDay.lunch, '☀️', selectedDay, currentDay.day)}
+                    {renderMealCard('Dinner', currentDay.dinner, '🌙', selectedDay, currentDay.day)}
+
+                    {/* Action Buttons */}
+                    <TouchableOpacity 
+                        style={styles.generateButton}
+                        onPress={handleRegenerateAll}
+                        disabled={isRegeneratingAll || isGeneratingList}
                     >
-                        <Text style={[
-                            styles.dayLabel,
-                            selectedDay === index && styles.dayLabelActive,
-                        ]}>
-                            {dayPlan.day}
-                        </Text>
-                        <Text style={[
-                            styles.dateLabel,
-                            selectedDay === index && styles.dateLabelActive,
-                        ]}>
-                            {dayPlan.date}
-                        </Text>
+                        {isRegeneratingAll ? (
+                            <ActivityIndicator color="#ffffff" size="small" />
+                        ) : (
+                            <Text style={styles.generateButtonText}>✨ Regenerate All Meals</Text>
+                        )}
                     </TouchableOpacity>
-                ))}
-            </ScrollView>
 
-            {/* Daily Summary */}
-            <View style={styles.summaryCard}>
-                <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Total Calories</Text>
-                    <Text style={styles.summaryValue}>{totalCalories} cal</Text>
-                </View>
-                <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Total Protein</Text>
-                    <Text style={styles.summaryValue}>{totalProtein}g</Text>
-                </View>
-            </View>
+                    <TouchableOpacity 
+                        style={[styles.generateButton, styles.groceryButton]}
+                        onPress={handleGenerateGroceryList}
+                        disabled={isGeneratingList || isRegeneratingAll}
+                    >
+                        {isGeneratingList ? (
+                            <ActivityIndicator color={LIGHT_COLORS.accentPrimary} size="small" />
+                        ) : (
+                            <Text style={styles.groceryButtonText}>🛒 Generate Grocery List</Text>
+                        )}
+                    </TouchableOpacity>
 
-            {/* Meals List */}
-            <ScrollView style={styles.mealsContainer} showsVerticalScrollIndicator={false}>
-                {renderMealCard('Breakfast', currentDay.breakfast, '🌅', selectedDay, currentDay.day)}
-                {renderMealCard('Lunch', currentDay.lunch, '☀️', selectedDay, currentDay.day)}
-                {renderMealCard('Dinner', currentDay.dinner, '🌙', selectedDay, currentDay.day)}
-
-                {/* Action Buttons */}
-                <TouchableOpacity 
-                    style={styles.generateButton}
-                    onPress={handleRegenerateAll}
-                    disabled={isRegeneratingAll || isGeneratingList}
-                >
-                    {isRegeneratingAll ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                    ) : (
-                        <Text style={styles.generateButtonText}>✨ Regenerate All Meals</Text>
-                    )}
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={[styles.generateButton, styles.groceryButton]}
-                    onPress={handleGenerateGroceryList}
-                    disabled={isGeneratingList || isRegeneratingAll}
-                >
-                    {isGeneratingList ? (
-                        <ActivityIndicator color={LIGHT_COLORS.accentPrimary} size="small" />
-                    ) : (
-                        <Text style={styles.groceryButtonText}>🛒 Generate Grocery List</Text>
-                    )}
-                </TouchableOpacity>
-
-                <View style={{ height: 20 }} />
-            </ScrollView>
+                    <View style={{ height: 20 }} />
+                </ScrollView>
+            </ProGuard>
         </LinearGradient>
     );
 }

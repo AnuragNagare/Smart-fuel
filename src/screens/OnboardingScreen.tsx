@@ -26,7 +26,7 @@ const { width } = Dimensions.get('window');
 const slides = [
     {
         id: '1',
-        title: 'Welcome to SmartFuel',
+        title: 'Welcome to NutriBot',
         subtitle: 'AI-Powered Nutrition Analyzer',
         emoji: '🍽️',
         description: 'Analyze your meals instantly with AI. Get calories, protein, fat, and carbs from a single photo.',

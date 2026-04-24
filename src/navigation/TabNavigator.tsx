@@ -3,10 +3,11 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT_COLORS } from '../constants/lightTheme';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 // Tab Screens
 import HomeScreen from '../screens/HomeScreen';
-import FuelBotScreen from '../features/fuelbot/FuelBotScreen';
+import NutriBotScreen from '../features/nutribot/NutriBotScreen';
 import MealPlanningScreen from '../features/mealplanning/MealPlanningScreen';
 import HealthInsightsScreen from '../features/healthinsights/HealthInsightsScreen';
 import SmartSwapsScreen from '../features/smartswaps/SmartSwapsScreen';
@@ -28,7 +29,6 @@ export default function TabNavigator() {
                         paddingBottom: insets.bottom > 0 ? insets.bottom : 12
                     }
                 ],
-                tabBarActiveTintColor: LIGHT_COLORS.accentPrimary,
                 tabBarInactiveTintColor: LIGHT_COLORS.textMuted,
                 tabBarLabelStyle: styles.tabLabel,
                 tabBarIconStyle: styles.tabIcon,
@@ -39,18 +39,20 @@ export default function TabNavigator() {
                 component={HomeScreen}
                 options={{
                     tabBarLabel: 'Home',
-                    tabBarIcon: ({ color, size }) => (
-                        <Text style={[styles.iconText, { color, fontSize: size }]}>🏠</Text>
+                    tabBarActiveTintColor: '#4A90E2',
+                    tabBarIcon: ({ focused, size }) => (
+                        <FontAwesome5 name="home" size={focused ? size + 4 : size} color={focused ? '#4A90E2' : LIGHT_COLORS.textMuted} />
                     ),
                 }}
             />
             <Tab.Screen
                 name="Coach"
-                component={FuelBotScreen}
+                component={NutriBotScreen}
                 options={{
                     tabBarLabel: 'Coach',
-                    tabBarIcon: ({ color, size }) => (
-                        <Text style={[styles.iconText, { color, fontSize: size }]}>🤖</Text>
+                    tabBarActiveTintColor: '#9B51E0',
+                    tabBarIcon: ({ focused, size }) => (
+                        <FontAwesome5 name="robot" size={focused ? size + 4 : size} color={focused ? '#9B51E0' : LIGHT_COLORS.textMuted} />
                     ),
                 }}
             />
@@ -59,8 +61,9 @@ export default function TabNavigator() {
                 component={MealPlanningScreen}
                 options={{
                     tabBarLabel: 'Plan',
-                    tabBarIcon: ({ color, size }) => (
-                        <Text style={[styles.iconText, { color, fontSize: size }]}>📅</Text>
+                    tabBarActiveTintColor: '#27AE60',
+                    tabBarIcon: ({ focused, size }) => (
+                        <FontAwesome5 name="calendar-alt" size={focused ? size + 4 : size} color={focused ? '#27AE60' : LIGHT_COLORS.textMuted} />
                     ),
                 }}
             />
@@ -69,8 +72,9 @@ export default function TabNavigator() {
                 component={HealthInsightsScreen}
                 options={{
                     tabBarLabel: 'Health',
-                    tabBarIcon: ({ color, size }) => (
-                        <Text style={[styles.iconText, { color, fontSize: size }]}>📈</Text>
+                    tabBarActiveTintColor: '#F2994A',
+                    tabBarIcon: ({ focused, size }) => (
+                        <FontAwesome5 name="chart-line" size={focused ? size + 4 : size} color={focused ? '#F2994A' : LIGHT_COLORS.textMuted} />
                     ),
                 }}
             />
@@ -79,8 +83,9 @@ export default function TabNavigator() {
                 component={SmartSwapsScreen}
                 options={{
                     tabBarLabel: 'Swaps',
-                    tabBarIcon: ({ color, size }) => (
-                        <Text style={[styles.iconText, { color, fontSize: size }]}>🔄</Text>
+                    tabBarActiveTintColor: '#00BCD4',
+                    tabBarIcon: ({ focused, size }) => (
+                        <FontAwesome5 name="exchange-alt" size={focused ? size + 4 : size} color={focused ? '#00BCD4' : LIGHT_COLORS.textMuted} />
                     ),
                 }}
             />
@@ -89,8 +94,9 @@ export default function TabNavigator() {
                 component={CheatMealScreen}
                 options={{
                     tabBarLabel: 'Treats',
-                    tabBarIcon: ({ color, size }) => (
-                        <Text style={[styles.iconText, { color, fontSize: size }]}>🍰</Text>
+                    tabBarActiveTintColor: '#E91E63',
+                    tabBarIcon: ({ focused, size }) => (
+                        <FontAwesome5 name="hamburger" size={focused ? size + 4 : size} color={focused ? '#E91E63' : LIGHT_COLORS.textMuted} />
                     ),
                 }}
             />

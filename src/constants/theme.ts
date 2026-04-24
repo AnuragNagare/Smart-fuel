@@ -47,5 +47,4 @@ export const RADIUS = {
     xl: 28,
 };
 
-export const BACKEND_URL = 'https://smartfuel-wine.vercel.app';
-export const GEMINI_MODEL = 'gemini-1.5-flash';
+export const BACKEND_URL = 'https://nutribot-backend-kappa.vercel.app';

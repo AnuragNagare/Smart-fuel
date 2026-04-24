@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "MobileApp",
-    "slug": "MobileApp",
+    "name": "NutriBot",
+    "slug": "nutribot",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,18 +13,34 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "NutriBot needs camera access to photograph your meals for AI nutrition analysis.",
+        "NSPhotoLibraryUsageDescription": "NutriBot needs access to your photo library to upload meal photos for analysis."
+      }
     },
     "android": {
+      "package": "com.anurag.nutribot",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "eb74f09b-53ea-4d8d-8284-ff1204f3fb6f"
+      }
     }
   }
 }

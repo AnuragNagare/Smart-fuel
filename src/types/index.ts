@@ -4,6 +4,8 @@ export interface UserProfile {
     location: string;
     height: string;
     weight: string;
+    heightUnit?: 'cm' | 'ft';
+    weightUnit?: 'kg' | 'lbs';
 }
 
 export interface FoodItem {
@@ -47,4 +49,5 @@ export type RootStackParamList = {
     Home: undefined;
     Camera: undefined;
     Results: { report: NutritionReport; imageUri: string };
+    Premium: undefined;
 };

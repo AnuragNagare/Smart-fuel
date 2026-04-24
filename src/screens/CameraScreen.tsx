@@ -4,7 +4,7 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    Image as RNImage,
+    Alert,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -24,7 +24,15 @@ export default function CameraScreen({ navigation }: Props) {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const cameraRef = useRef<CameraView>(null);
 
+    // Auto-request camera permission when screen first mounts
+    useEffect(() => {
+        if (permission !== null && !permission.granted && permission.canAskAgain) {
+            requestPermission();
+        }
+    }, [permission]);
+
     if (!permission) {
+        // Still loading permission state — show blank so nothing flickers
         return <View style={styles.container} />;
     }
 
