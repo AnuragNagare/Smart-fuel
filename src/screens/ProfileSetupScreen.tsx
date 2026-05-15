@@ -8,13 +8,15 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, UserProfile } from '../types';
 import { LIGHT_COLORS, LIGHT_SPACING, LIGHT_RADIUS } from '../constants/lightTheme';
 import { saveUserProfile, getUserProfile } from '../services/storage';
-import { logout } from '../services/auth';
+import { deleteAccount, isAuthenticated, logout } from '../services/auth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,10 +39,15 @@ export default function ProfileSetupScreen({ navigation }: Props) {
     const [heightUnit, setHeightUnit] = useState<'cm' | 'ft'>('cm');
     const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
     const [hasExistingProfile, setHasExistingProfile] = useState(false);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const insets = useSafeAreaInsets();
 
     useEffect(() => {
         const loadProfile = async () => {
+            const loggedIn = await isAuthenticated();
+            setIsLoggedIn(loggedIn);
+
             const profile = await getUserProfile();
             if (profile) {
                 setHasExistingProfile(true);
@@ -51,6 +58,37 @@ export default function ProfileSetupScreen({ navigation }: Props) {
         };
         loadProfile();
     }, []);
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            'Delete account?',
+            'This permanently removes your account, meal history, and profile from our servers. This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setIsDeletingAccount(true);
+                        try {
+                            await deleteAccount();
+                            navigation.reset({
+                                index: 0,
+                                routes: [{ name: 'Onboarding' }],
+                            });
+                        } catch (error: any) {
+                            Alert.alert(
+                                'Could not delete account',
+                                error?.message || 'Please try again later.'
+                            );
+                        } finally {
+                            setIsDeletingAccount(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
 
     const updateField = (field: keyof UserProfile, value: string) => {
         setFormData((prev) => ({ ...prev, [field]: value }));
@@ -308,24 +346,41 @@ export default function ProfileSetupScreen({ navigation }: Props) {
                         </LinearGradient>
                     </TouchableOpacity>
 
-                    {hasExistingProfile && (
-                        <TouchableOpacity
-                            style={styles.logoutButton}
-                            onPress={async () => {
-                                try {
-                                    await logout();
-                                    navigation.reset({
-                                        index: 0,
-                                        routes: [{ name: 'Onboarding' }],
-                                    });
-                                } catch (error) {
-                                    console.error('Logout failed:', error);
-                                }
-                            }}
-                        >
-                            <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
-                            <Text style={styles.logoutText}>Sign Out</Text>
-                        </TouchableOpacity>
+                    {isLoggedIn && (
+                        <>
+                            <TouchableOpacity
+                                style={styles.logoutButton}
+                                onPress={async () => {
+                                    try {
+                                        await logout();
+                                        navigation.reset({
+                                            index: 0,
+                                            routes: [{ name: 'Onboarding' }],
+                                        });
+                                    } catch (error) {
+                                        console.error('Logout failed:', error);
+                                    }
+                                }}
+                            >
+                                <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
+                                <Text style={styles.logoutText}>Sign Out</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.deleteAccountButton}
+                                onPress={handleDeleteAccount}
+                                disabled={isDeletingAccount}
+                            >
+                                {isDeletingAccount ? (
+                                    <ActivityIndicator color="#B91C1C" />
+                                ) : (
+                                    <>
+                                        <MaterialCommunityIcons name="account-remove" size={20} color="#B91C1C" />
+                                        <Text style={styles.deleteAccountText}>Delete Account</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </>
                     )}
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -552,5 +607,19 @@ const styles = StyleSheet.create({
         color: '#EF4444',
         fontSize: 16,
         fontWeight: '700',
+    },
+    deleteAccountButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 8,
+        marginBottom: 24,
+        paddingVertical: 15,
+        gap: 8,
+    },
+    deleteAccountText: {
+        color: '#B91C1C',
+        fontSize: 15,
+        fontWeight: '600',
     },
 });

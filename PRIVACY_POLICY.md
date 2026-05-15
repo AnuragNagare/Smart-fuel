@@ -99,9 +99,7 @@ Each provider has its own privacy policy; we encourage you to read them.
 ## 6. Retention and deletion
 
 - We retain account and history data **as long as your account is active** and as needed to provide the service, unless a longer period is required by law.
-- You may request **deletion** of your account and associated personal data by contacting **anuragnagare77@gmail.com**. We will describe any information we must retain for legal or security reasons.
-
-*(If you implement in-app account deletion, say so here and how long backups take to clear.)*
+- You may **delete your account in the app** (Profile → Delete Account), which removes your authentication account, profile, and meal history from our systems, or contact **anuragnagare77@gmail.com** for assistance.
 
 ---
 

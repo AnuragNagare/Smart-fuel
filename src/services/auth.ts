@@ -1,4 +1,8 @@
 import { supabase } from './supabase';
+import { BACKEND_URL } from '../constants/theme';
+import { clearUserData } from './storage';
+
+const DELETE_ACCOUNT_API_URL = `${BACKEND_URL}/api/delete-account`;
 
 // Safe default for usageStats — used whenever DB returns null/undefined
 const defaultUsageStats = () => ({
@@ -203,6 +207,32 @@ export const logout = async (): Promise<void> => {
         throw error;
     }
 };
+
+/** Permanently delete account (Supabase auth + profile + meal history). */
+export const deleteAccount = async (): Promise<void> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        throw new Error('You must be signed in to delete your account');
+    }
+
+    const response = await fetch(DELETE_ACCOUNT_API_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+        },
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(body.error || 'Failed to delete account');
+    }
+
+    await clearUserData().catch(() => {});
+    await supabase.auth.signOut();
+};
+
+export const getDeleteAccountApiUrl = () => DELETE_ACCOUNT_API_URL;
 
 
 // Validate email format
